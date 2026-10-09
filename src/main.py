@@ -108,6 +108,13 @@ class DoodlshotApp:
                     subprocess.run(["notify-send", "-a", "Doodlshot", "Doodlshot", "Annotated screenshot copied to clipboard!"])
                 self.app.quit()
 
+            elif action == "copy_text" and data:
+                text = str(data).strip()
+                try:
+                    subprocess.run(["wl-copy"], input=text.encode("utf-8"), check=True)
+                except Exception as ex:
+                    print(f"wl-copy text error: {ex}", file=sys.stderr)
+
             elif action == "save" and data:
                 if "," in data:
                     b64_data = data.split(",", 1)[1]

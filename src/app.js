@@ -136,6 +136,7 @@ function setOuterRadius(val) {
 const toolLabels = {
   select: 'Select & Move',
   arrow: 'Bendable Arrow',
+  ruler: 'Screen Ruler (D)',
   oval: 'Hand-drawn Oval',
   rect: 'Hand-drawn Rectangle',
   cloud: 'Callout Cloud',
@@ -159,7 +160,7 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 function initUI() {
-  const tools = ['select', 'arrow', 'oval', 'rect', 'cloud', 'step', 'highlighter', 'magnifier', 'pen', 'text', 'spotlight', 'pixelate', 'blur', 'erase', 'crop'];
+  const tools = ['select', 'arrow', 'ruler', 'oval', 'rect', 'cloud', 'step', 'highlighter', 'magnifier', 'pen', 'text', 'spotlight', 'pixelate', 'blur', 'erase', 'crop'];
   tools.forEach(t => {
     const btn = document.getElementById(`tool-${t}`);
     if (btn) {
@@ -276,11 +277,24 @@ function initUI() {
   document.getElementById('btn-copy').addEventListener('click', copyToClipboard);
   document.getElementById('btn-save').addEventListener('click', saveToFile);
 
+  // Pixel Color Inspector chip click
+  const inspectorChip = document.getElementById('color-inspector-chip');
+  if (inspectorChip) {
+    inspectorChip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const hexLabel = document.getElementById('inspector-hex');
+      const hex = hexLabel ? hexLabel.textContent : '#FFFFFF';
+      sendToBackend('copy_text', hex);
+      showToast(`Copied ${hex} to clipboard!`);
+    });
+  }
+
   // Keyboard shortcuts
   window.addEventListener('keydown', handleKeyDown);
 
   // Canvas mouse/pointer events
   canvas.addEventListener('mousedown', onPointerDown);
+  canvas.addEventListener('mousemove', onCanvasHover);
   window.addEventListener('mousemove', onPointerMove);
   window.addEventListener('mouseup', onPointerUp);
 
@@ -392,6 +406,126 @@ function createMockScreenshot() {
 }
 
 // ----------------------------------------------------
+// Toast Notification & Pixel Color Inspector
+// ----------------------------------------------------
+
+let toastTimeout = null;
+function showToast(message, duration = 1800) {
+  const toast = document.getElementById('toast-notification');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.remove('toast-hidden');
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    toast.classList.add('toast-hidden');
+  }, duration);
+}
+
+function rgbToHex(r, g, b) {
+  return '#' + [r, g, b].map(x => {
+    const hex = Math.max(0, Math.min(255, Math.round(x))).toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  }).join('').toUpperCase();
+}
+
+let currentInspectPos = null;
+
+function onCanvasHover(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const rawX = (e.clientX - rect.left) * scaleX;
+  const rawY = (e.clientY - rect.top) * scaleY;
+  currentInspectPos = { rawX, rawY, x: rawX - getBackdropPad(), y: rawY - getBackdropPad() };
+  if (!isDrawing) {
+    updateColorInspector(rawX, rawY);
+  }
+}
+
+function samplePixelColor(rawX, rawY) {
+  const rx = Math.max(0, Math.min(canvas.width - 1, Math.floor(rawX)));
+  const ry = Math.max(0, Math.min(canvas.height - 1, Math.floor(rawY)));
+  try {
+    const pixel = ctx.getImageData(rx, ry, 1, 1).data;
+    return rgbToHex(pixel[0], pixel[1], pixel[2]);
+  } catch (e) {
+    return '#FFFFFF';
+  }
+}
+
+function sampleContrastPixel(rawX, rawY) {
+  const radius = 12; // 25x25 window
+  const startX = Math.max(0, Math.floor(rawX - radius));
+  const startY = Math.max(0, Math.floor(rawY - radius));
+  const endX = Math.min(canvas.width - 1, Math.floor(rawX + radius));
+  const endY = Math.min(canvas.height - 1, Math.floor(rawY + radius));
+  const w = endX - startX + 1;
+  const h = endY - startY + 1;
+  if (w <= 0 || h <= 0) return '#000000';
+
+  try {
+    const imgData = ctx.getImageData(startX, startY, w, h).data;
+    let totalLum = 0;
+    let count = 0;
+    for (let i = 0; i < imgData.length; i += 4) {
+      if (imgData[i + 3] >= 50) {
+        totalLum += 0.299 * imgData[i] + 0.587 * imgData[i + 1] + 0.114 * imgData[i + 2];
+        count++;
+      }
+    }
+    const avgLum = count > 0 ? (totalLum / count) : 128;
+    const findDarkest = avgLum >= 128; // Light background -> sample darkest text; Dark background -> sample lightest text
+
+    let targetR = 0, targetG = 0, targetB = 0;
+    let targetLum = findDarkest ? 9999 : -1;
+
+    for (let i = 0; i < imgData.length; i += 4) {
+      if (imgData[i + 3] < 50) continue;
+      const r = imgData[i];
+      const g = imgData[i + 1];
+      const b = imgData[i + 2];
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      if (findDarkest) {
+        if (lum < targetLum) {
+          targetLum = lum;
+          targetR = r; targetG = g; targetB = b;
+        }
+      } else {
+        if (lum > targetLum) {
+          targetLum = lum;
+          targetR = r; targetG = g; targetB = b;
+        }
+      }
+    }
+
+    return rgbToHex(targetR, targetG, targetB);
+  } catch (e) {
+    return '#000000';
+  }
+}
+
+function updateColorInspector(rawX, rawY) {
+  if (rawX < 0 || rawX >= canvas.width || rawY < 0 || rawY >= canvas.height) return;
+  const hex = samplePixelColor(rawX, rawY);
+  const swatch = document.getElementById('inspector-swatch');
+  const hexLabel = document.getElementById('inspector-hex');
+  if (swatch) swatch.style.backgroundColor = hex;
+  if (hexLabel) hexLabel.textContent = hex;
+}
+
+function handleColorInspectorCopy(isContrast = false) {
+  const pos = currentInspectPos || { rawX: canvas.width / 2, rawY: canvas.height / 2 };
+  const hex = isContrast ? sampleContrastPixel(pos.rawX, pos.rawY) : samplePixelColor(pos.rawX, pos.rawY);
+  const swatch = document.getElementById('inspector-swatch');
+  const hexLabel = document.getElementById('inspector-hex');
+  if (swatch) swatch.style.backgroundColor = hex;
+  if (hexLabel) hexLabel.textContent = hex;
+
+  sendToBackend('copy_text', hex);
+  showToast(isContrast ? `Copied text color ${hex}!` : `Copied ${hex}!`);
+}
+
+// ----------------------------------------------------
 // Pointer Interaction
 // ----------------------------------------------------
 
@@ -479,6 +613,9 @@ function onPointerDown(e) {
           isMoving = true;
           moveOffset = { x: pos.x - selectedAnnotation.p0.x, y: pos.y - selectedAnnotation.p0.y };
         }
+      } else if (selectedAnnotation.type === 'ruler') {
+        isMoving = true;
+        moveOffset = { x: pos.x - selectedAnnotation.startX, y: pos.y - selectedAnnotation.startY };
       } else if ((selectedAnnotation.type === 'step' || selectedAnnotation.type === 'cloud') && Math.hypot(pos.x - selectedAnnotation.tipX, pos.y - selectedAnnotation.tipY) < 18) {
         activeHandle = 'tip';
       } else {
@@ -645,6 +782,16 @@ function onPointerDown(e) {
       w: 0,
       h: 0
     };
+  } else if (activeTool === 'ruler') {
+    currentAnnotation = {
+      type: 'ruler',
+      startX: pos.x,
+      startY: pos.y,
+      endX: pos.x,
+      endY: pos.y,
+      color: activeColor,
+      width: activeWidth
+    };
   }
 }
 
@@ -686,6 +833,13 @@ function onPointerMove(e) {
       selectedAnnotation.p1.y += dy;
       selectedAnnotation.p2.x += dx;
       selectedAnnotation.p2.y += dy;
+    } else if (selectedAnnotation.type === 'ruler') {
+      const dx = pos.x - selectedAnnotation.startX - moveOffset.x;
+      const dy = pos.y - selectedAnnotation.startY - moveOffset.y;
+      selectedAnnotation.startX += dx;
+      selectedAnnotation.startY += dy;
+      selectedAnnotation.endX += dx;
+      selectedAnnotation.endY += dy;
     } else {
       const origX = selectedAnnotation.x !== undefined ? selectedAnnotation.x : selectedAnnotation.cx;
       const origY = selectedAnnotation.y !== undefined ? selectedAnnotation.y : selectedAnnotation.cy;
@@ -758,6 +912,21 @@ function onPointerMove(e) {
   } else if (currentAnnotation.type === 'pen') {
     currentAnnotation.points.push({ x: pos.x, y: pos.y });
     currentAnnotation.drawable = null;
+  } else if (currentAnnotation.type === 'ruler') {
+    if (e.shiftKey) {
+      const dx = Math.abs(pos.x - currentAnnotation.startX);
+      const dy = Math.abs(pos.y - currentAnnotation.startY);
+      if (dx > dy) {
+        currentAnnotation.endX = pos.x;
+        currentAnnotation.endY = currentAnnotation.startY;
+      } else {
+        currentAnnotation.endX = currentAnnotation.startX;
+        currentAnnotation.endY = pos.y;
+      }
+    } else {
+      currentAnnotation.endX = pos.x;
+      currentAnnotation.endY = pos.y;
+    }
   }
 
   redraw();
@@ -809,6 +978,12 @@ function onPointerUp(e) {
         currentAnnotation.p1.x += perpX;
         currentAnnotation.p1.y += perpY;
         currentAnnotation.drawable = null;
+        annotations.push(currentAnnotation);
+        selectedAnnotation = currentAnnotation;
+      }
+    } else if (currentAnnotation.type === 'ruler') {
+      const dist = Math.hypot(currentAnnotation.endX - currentAnnotation.startX, currentAnnotation.endY - currentAnnotation.startY);
+      if (dist > 5) {
         annotations.push(currentAnnotation);
         selectedAnnotation = currentAnnotation;
       }
@@ -1014,7 +1189,7 @@ function redraw(includeHandles = true) {
       renderArrowHandles(selectedAnnotation);
     } else if (selectedAnnotation.type === 'step' || selectedAnnotation.type === 'cloud') {
       renderPointerTipHandle(selectedAnnotation);
-    } else if (['pixelate', 'blur', 'erase', 'spotlight', 'rect'].includes(selectedAnnotation.type)) {
+    } else if (['pixelate', 'blur', 'erase', 'spotlight', 'rect', 'ruler'].includes(selectedAnnotation.type)) {
       renderBoxSelection(selectedAnnotation);
     }
   }
@@ -1044,6 +1219,8 @@ function redraw(includeHandles = true) {
 function renderAnnotation(a) {
   if (a.type === 'arrow') {
     renderShottrArrow(a);
+  } else if (a.type === 'ruler') {
+    renderRuler(a);
   } else if (a.type === 'text') {
     renderText(a);
   } else if (a.type === 'step') {
@@ -1057,6 +1234,170 @@ function renderAnnotation(a) {
       rc.draw(d);
     }
   }
+}
+
+// 📏 Shottr's Precision Screen Ruler & Dimension Caliper
+function renderRuler(a) {
+  const { startX, startY, endX, endY, color = '#ff6b6b' } = a;
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const absX = Math.round(Math.abs(dx));
+  const absY = Math.round(Math.abs(dy));
+
+  ctx.save();
+
+  // Mode 1: Pure horizontal
+  if (absY < 15) {
+    const y = startY;
+    const x1 = Math.min(startX, endX);
+    const x2 = Math.max(startX, endX);
+    const dist = x2 - x1;
+    if (dist < 2) { ctx.restore(); return; }
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = 'round';
+
+    // End ticks
+    ctx.beginPath();
+    ctx.moveTo(x1, y - 9); ctx.lineTo(x1, y + 9);
+    ctx.moveTo(x2, y - 9); ctx.lineTo(x2, y + 9);
+    ctx.stroke();
+
+    // Dimension line
+    ctx.beginPath();
+    ctx.moveTo(x1, y); ctx.lineTo(x2, y);
+    ctx.stroke();
+
+    // Inward arrows
+    const arrLen = Math.min(8, dist / 3);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x1, y); ctx.lineTo(x1 + arrLen, y - 4); ctx.lineTo(x1 + arrLen, y + 4); ctx.closePath();
+    ctx.moveTo(x2, y); ctx.lineTo(x2 - arrLen, y - 4); ctx.lineTo(x2 - arrLen, y + 4); ctx.closePath();
+    ctx.fill();
+
+    // Center Badge
+    const midX = (x1 + x2) / 2;
+    drawRulerBadge(ctx, `${dist} px`, midX, y, color);
+  }
+  // Mode 2: Pure vertical
+  else if (absX < 15) {
+    const x = startX;
+    const y1 = Math.min(startY, endY);
+    const y2 = Math.max(startY, endY);
+    const dist = y2 - y1;
+    if (dist < 2) { ctx.restore(); return; }
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = 'round';
+
+    // End ticks
+    ctx.beginPath();
+    ctx.moveTo(x - 9, y1); ctx.lineTo(x + 9, y1);
+    ctx.moveTo(x - 9, y2); ctx.lineTo(x + 9, y2);
+    ctx.stroke();
+
+    // Dimension line
+    ctx.beginPath();
+    ctx.moveTo(x, y1); ctx.lineTo(x, y2);
+    ctx.stroke();
+
+    // Inward arrows
+    const arrLen = Math.min(8, dist / 3);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x, y1); ctx.lineTo(x - 4, y1 + arrLen); ctx.lineTo(x + 4, y1 + arrLen); ctx.closePath();
+    ctx.moveTo(x, y2); ctx.lineTo(x - 4, y2 - arrLen); ctx.lineTo(x + 4, y2 - arrLen); ctx.closePath();
+    ctx.fill();
+
+    // Center Badge
+    const midY = (y1 + y2) / 2;
+    drawRulerBadge(ctx, `${dist} px`, x, midY, color);
+  }
+  // Mode 3: 2D Box Dimension (Width & Height)
+  else {
+    const x1 = Math.min(startX, endX);
+    const x2 = Math.max(startX, endX);
+    const y1 = Math.min(startY, endY);
+    const y2 = Math.max(startY, endY);
+    const w = x2 - x1;
+    const h = y2 - y1;
+    if (w < 2 || h < 2) { ctx.restore(); return; }
+
+    // Light dashed bounding box
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(x1, y1, w, h);
+    ctx.setLineDash([]);
+
+    // Top horizontal ruler
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x1, y1 - 8); ctx.lineTo(x1, y1 + 4);
+    ctx.moveTo(x2, y1 - 8); ctx.lineTo(x2, y1 + 4);
+    ctx.moveTo(x1, y1 - 2); ctx.lineTo(x2, y1 - 2);
+    ctx.stroke();
+
+    // Top arrows
+    const arrX = Math.min(7, w / 3);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1 - 2); ctx.lineTo(x1 + arrX, y1 - 5); ctx.lineTo(x1 + arrX, y1 + 1); ctx.closePath();
+    ctx.moveTo(x2, y1 - 2); ctx.lineTo(x2 - arrX, y1 - 5); ctx.lineTo(x2 - arrX, y1 + 1); ctx.closePath();
+    ctx.fill();
+
+    // Left vertical ruler
+    ctx.beginPath();
+    ctx.moveTo(x1 - 8, y1); ctx.lineTo(x1 + 4, y1);
+    ctx.moveTo(x1 - 8, y2); ctx.lineTo(x1 + 4, y2);
+    ctx.moveTo(x1 - 2, y1); ctx.lineTo(x1 - 2, y2);
+    ctx.stroke();
+
+    // Left arrows
+    const arrY = Math.min(7, h / 3);
+    ctx.beginPath();
+    ctx.moveTo(x1 - 2, y1); ctx.lineTo(x1 - 5, y1 + arrY); ctx.lineTo(x1 + 1, y1 + arrY); ctx.closePath();
+    ctx.moveTo(x1 - 2, y2); ctx.lineTo(x1 - 5, y2 - arrY); ctx.lineTo(x1 + 1, y2 - arrY); ctx.closePath();
+    ctx.fill();
+
+    // Center Badge showing W × H
+    drawRulerBadge(ctx, `${w} × ${h} px`, (x1 + x2) / 2, (y1 + y2) / 2, color);
+  }
+
+  ctx.restore();
+}
+
+function drawRulerBadge(ctx, text, x, y, color) {
+  ctx.save();
+  ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif';
+  const tm = ctx.measureText(text);
+  const pw = tm.width + 16;
+  const ph = 22;
+
+  // Modern frosted dark pill badge
+  ctx.fillStyle = '#18181b';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 2;
+  ctx.beginPath();
+  ctx.roundRect(x - pw / 2, y - ph / 2, pw, ph, 11);
+  ctx.fill();
+
+  ctx.shadowColor = 'transparent';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // White crisp text
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x, y);
+  ctx.restore();
 }
 
 // 🏹 Shottr's Signature Smooth Arrow with Sharp Connected Chevron Head
@@ -1318,6 +1659,7 @@ function renderHighlighter(a) {
   ctx.save();
   ctx.globalAlpha = 0.38;
   ctx.fillStyle = a.color;
+  ctx.beginPath();
   ctx.roundRect(a.x, a.y, a.w, a.h, 4);
   ctx.fill();
   ctx.restore();
@@ -1784,6 +2126,12 @@ function renderBoxSelection(a) {
     const r = Math.min(16, Math.min(a.w, a.h) / 2);
     ctx.roundRect(a.x, a.y, a.w, a.h, r);
     ctx.stroke();
+  } else if (a.type === 'ruler') {
+    const rx = Math.min(a.startX, a.endX) - 4;
+    const ry = Math.min(a.startY, a.endY) - 4;
+    const rw = Math.max(12, Math.abs(a.endX - a.startX) + 8);
+    const rh = Math.max(12, Math.abs(a.endY - a.startY) + 8);
+    ctx.strokeRect(rx, ry, rw, rh);
   } else {
     ctx.strokeRect(a.x, a.y, a.w, a.h);
   }
@@ -1871,6 +2219,20 @@ function findAnnotationAt(pos) {
       const dx = (pos.x - a.cx) / a.rx;
       const dy = (pos.y - a.cy) / a.ry;
       if (Math.abs(dx * dx + dy * dy - 1) < 0.4) return a;
+    } else if (a.type === 'ruler') {
+      const minX = Math.min(a.startX, a.endX);
+      const maxX = Math.max(a.startX, a.endX);
+      const minY = Math.min(a.startY, a.endY);
+      const maxY = Math.max(a.startY, a.endY);
+      const dx = Math.abs(a.endX - a.startX);
+      const dy = Math.abs(a.endY - a.startY);
+      if (dy < 15) {
+        if (pos.x >= minX - 8 && pos.x <= maxX + 8 && Math.abs(pos.y - a.startY) < 14) return a;
+      } else if (dx < 15) {
+        if (pos.y >= minY - 8 && pos.y <= maxY + 8 && Math.abs(pos.x - a.startX) < 14) return a;
+      } else {
+        if (pos.x >= minX - 8 && pos.x <= maxX + 8 && pos.y >= minY - 8 && pos.y <= maxY + 8) return a;
+      }
     } else if (['rect', 'cloud', 'highlighter', 'pixelate', 'blur', 'erase', 'spotlight'].includes(a.type)) {
       if (pos.x >= a.x - 5 && pos.x <= a.x + a.w + 5 &&
           pos.y >= a.y - 5 && pos.y <= a.y + a.h + 5) return a;
@@ -2015,6 +2377,10 @@ function sendToBackend(action, data) {
         navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
         alert('Copied image to clipboard!');
       });
+    } else if (action === 'copy_text' && data) {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(data).catch(() => {});
+      }
     }
   }
 }
@@ -2025,6 +2391,13 @@ function sendToBackend(action, data) {
 
 function handleKeyDown(e) {
   if (textEditor.style.display === 'block') return;
+
+  // Pixel Color Inspector Tab shortcut
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    handleColorInspectorCopy(e.shiftKey);
+    return;
+  }
 
   if (e.ctrlKey && e.key.toLowerCase() === 'z') {
     e.preventDefault();
@@ -2048,6 +2421,8 @@ function handleKeyDown(e) {
     sendToBackend('exit', null);
   } else if (e.key.toLowerCase() === 'a') {
     setTool('arrow');
+  } else if (e.key.toLowerCase() === 'd') {
+    setTool('ruler');
   } else if (e.key.toLowerCase() === 'o') {
     setTool('oval');
   } else if (e.key.toLowerCase() === 'r') {
