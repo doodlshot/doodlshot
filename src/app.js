@@ -45,6 +45,11 @@ let backdropRadius = 14;     // inner screenshot radius
 let outerFrameRadius = 16;   // outer whole image radius
 let isBackdropPanelOpen = false;
 
+// High-performance unified frosted blur caching
+let cachedBaseBlur = null;
+let cachedBaseBlurRadius = 0;
+let cachedBlurComposite = null;
+
 function getBackdropPad() {
   return activeBackdrop !== 'none' ? backdropPadding : 0;
 }
@@ -244,6 +249,7 @@ function initUI() {
           if (['pixelate', 'blur', 'erase'].includes(selectedAnnotation.type)) {
             selectedAnnotation.blockSize = activeWidth <= 3.0 ? 8 : (activeWidth > 5.5 ? 18 : 12);
             selectedAnnotation.baked = null;
+            if (selectedAnnotation.type === 'blur') cachedBlurComposite = null;
           }
           redraw();
         }
@@ -331,6 +337,9 @@ function loadImage() {
   baseImage.onload = () => {
     imageWidth = baseImage.naturalWidth || baseImage.width;
     imageHeight = baseImage.naturalHeight || baseImage.height;
+    cachedBaseBlur = null;
+    cachedBaseBlurRadius = 0;
+    cachedBlurComposite = null;
     resizeCanvasForBackdrop();
     redraw();
   };
@@ -694,6 +703,7 @@ function onPointerMove(e) {
 
       if (['pixelate', 'blur', 'erase'].includes(selectedAnnotation.type)) {
         selectedAnnotation.baked = null; // re-bake at new location
+        if (selectedAnnotation.type === 'blur') cachedBlurComposite = null;
       }
     }
     selectedAnnotation.drawable = null;
@@ -804,9 +814,13 @@ function onPointerUp(e) {
       }
     } else if (['pixelate', 'blur', 'erase'].includes(currentAnnotation.type)) {
       if (currentAnnotation.w > 4 && currentAnnotation.h > 4) {
-        if (currentAnnotation.type === 'blur') currentAnnotation.baked = bakeBlur(currentAnnotation);
-        else if (currentAnnotation.type === 'erase') currentAnnotation.baked = bakeErase(currentAnnotation);
-        else currentAnnotation.baked = bakePixelate(currentAnnotation);
+        if (currentAnnotation.type === 'blur') {
+          cachedBlurComposite = null;
+        } else if (currentAnnotation.type === 'erase') {
+          currentAnnotation.baked = bakeErase(currentAnnotation);
+        } else {
+          currentAnnotation.baked = bakePixelate(currentAnnotation);
+        }
         annotations.push(currentAnnotation);
         selectedAnnotation = currentAnnotation;
       }
@@ -824,7 +838,7 @@ function onPointerUp(e) {
 
   // If existing redaction was moved, re-bake it at its new position
   if (selectedAnnotation && ['pixelate', 'blur', 'erase'].includes(selectedAnnotation.type)) {
-    if (selectedAnnotation.type === 'blur') selectedAnnotation.baked = bakeBlur(selectedAnnotation);
+    if (selectedAnnotation.type === 'blur') cachedBlurComposite = null;
     else if (selectedAnnotation.type === 'erase') selectedAnnotation.baked = bakeErase(selectedAnnotation);
     else selectedAnnotation.baked = bakePixelate(selectedAnnotation);
   }
@@ -947,8 +961,11 @@ function redraw(includeHandles = true) {
     ctx.drawImage(baseImage, 0, 0, imageWidth, imageHeight);
   }
 
-  // 1. Redactions first (pixelate, blur, erase)
-  annotations.filter(a => ['pixelate', 'blur', 'erase'].includes(a.type)).forEach(a => renderRedaction(a));
+  // 1. Redactions: unified organic frosted blur layer first
+  renderBlurLayer();
+
+  // Pixelate & Smart Erase
+  annotations.filter(a => ['pixelate', 'erase'].includes(a.type)).forEach(a => renderRedaction(a));
 
   // 2. Spotlights
   renderSpotlightsLayer();
@@ -968,7 +985,8 @@ function redraw(includeHandles = true) {
       ctx.save();
       ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
       ctx.beginPath();
-      ctx.roundRect(currentAnnotation.x, currentAnnotation.y, currentAnnotation.w, currentAnnotation.h, 6);
+      const r = Math.min(16, Math.min(currentAnnotation.w, currentAnnotation.h) / 2);
+      ctx.roundRect(currentAnnotation.x, currentAnnotation.y, currentAnnotation.w, currentAnnotation.h, r);
       ctx.fill();
       ctx.strokeStyle = '#4dabf7';
       ctx.lineWidth = 1.5;
@@ -1385,6 +1403,9 @@ function applyCrop(x, y, w, h) {
   baseImage.onload = () => {
     imageWidth = w;
     imageHeight = h;
+    cachedBaseBlur = null;
+    cachedBaseBlurRadius = 0;
+    cachedBlurComposite = null;
     resizeCanvasForBackdrop();
 
     annotations.forEach(a => {
@@ -1535,94 +1556,123 @@ function gaussianBlurImageData(imgData, radius) {
   boxBlurT(tmp, src, w, h, r);
 }
 
-function bakeBlur(a) {
-  if (!baseImage) return null;
-  const rawX = Math.floor(a.x);
-  const rawY = Math.floor(a.y);
-  const rawW = Math.floor(a.w);
-  const rawH = Math.floor(a.h);
-  if (rawW < 4 || rawH < 4) return null;
+// 🧼 Unified Organic Frosted Blur Layer (Silky Capsule Contours & Seamless Multi-Box Union)
+function renderBlurLayer() {
+  const blurs = annotations.filter(a => a.type === 'blur');
+  if (blurs.length === 0) return;
 
-  // Determine blur strength (responsive to stroke width: thin=16, medium=24, thick=32)
-  const blurRadius = a.blurRadius || (a.width <= 3.0 ? 16 : (a.width > 5.5 ? 32 : 24));
+  // If already composited and cached, blit instantaneously
+  if (cachedBlurComposite) {
+    ctx.drawImage(cachedBlurComposite.off, cachedBlurComposite.x, cachedBlurComposite.y);
+    return;
+  }
 
-  // Outer feathering collar: inside the box is 100% solid redaction, outside fades out to 0
-  const feather = Math.max(4, Math.min(8, Math.min(rawW, rawH) * 0.22));
-  const fRound = Math.ceil(feather);
-  const sx = Math.max(0, rawX - fRound);
-  const sy = Math.max(0, rawY - fRound);
-  const sw = Math.min(imageWidth - sx, rawW + fRound * 2);
-  const sh = Math.min(imageHeight - sy, rawH + fRound * 2);
+  if (!baseImage) return;
 
-  // Generous margin for 3-pass Gaussian convolution sampling
-  const margin = Math.round(blurRadius * 1.5);
-  const x0 = Math.max(0, sx - margin);
-  const y0 = Math.max(0, sy - margin);
-  const x1 = Math.min(imageWidth, sx + sw + margin);
-  const y1 = Math.min(imageHeight, sy + sh + margin);
-  const pw = x1 - x0;
-  const ph = y1 - y0;
-  if (pw < 4 || ph < 4) return null;
+  // Determine blur intensity from active blurs
+  let maxRadius = 26;
+  blurs.forEach(b => {
+    const r = b.blurRadius || (b.width <= 3.0 ? 18 : (b.width > 5.5 ? 32 : 26));
+    if (r > maxRadius) maxRadius = r;
+  });
 
-  const tempSource = document.createElement('canvas');
-  tempSource.width = pw;
-  tempSource.height = ph;
-  const sctx = tempSource.getContext('2d');
-  sctx.drawImage(baseImage, x0, y0, pw, ph, 0, 0, pw, ph);
+  // Ensure base image blur cache is up to date
+  if (!cachedBaseBlur || cachedBaseBlurRadius !== maxRadius ||
+      cachedBaseBlur.width !== imageWidth || cachedBaseBlur.height !== imageHeight) {
+    const bb = document.createElement('canvas');
+    bb.width = imageWidth;
+    bb.height = imageHeight;
+    const bbctx = bb.getContext('2d');
+    bbctx.drawImage(baseImage, 0, 0);
+    const bData = bbctx.getImageData(0, 0, imageWidth, imageHeight);
+    gaussianBlurImageData(bData, maxRadius);
+    bbctx.putImageData(bData, 0, 0);
+    cachedBaseBlur = bb;
+    cachedBaseBlurRadius = maxRadius;
+  }
 
-  try {
-    const imgData = sctx.getImageData(0, 0, pw, ph);
-    gaussianBlurImageData(imgData, blurRadius);
-    sctx.putImageData(imgData, 0, 0);
+  const feather = 8;
+  const pad = feather + 18;
 
-    // Analytic Euclidean distance mask:
-    // Core (distOutside == 0): 100% alpha (255) - 0% underlying text bleed-through!
-    // Collar (distOutside > 0): Hermite smoothstep fade to 0 - zero razor seams!
-    const mask = document.createElement('canvas');
-    mask.width = sw;
-    mask.height = sh;
-    const mctx = mask.getContext('2d');
-    const mData = mctx.createImageData(sw, sh);
-    const mpx = mData.data;
+  let minX = imageWidth, minY = imageHeight, maxX = 0, maxY = 0;
+  blurs.forEach(b => {
+    minX = Math.max(0, Math.min(minX, Math.floor(b.x - pad)));
+    minY = Math.max(0, Math.min(minY, Math.floor(b.y - pad)));
+    maxX = Math.min(imageWidth, Math.max(maxX, Math.ceil(b.x + b.w + pad)));
+    maxY = Math.min(imageHeight, Math.max(maxY, Math.ceil(b.y + b.h + pad)));
+  });
 
-    const offX = rawX - sx;
-    const offY = rawY - sy;
+  const rw = maxX - minX;
+  const rh = maxY - minY;
+  if (rw <= 0 || rh <= 0) return;
 
-    for (let y = 0; y < sh; y++) {
-      for (let x = 0; x < sw; x++) {
-        const qx = Math.max(offX - x, 0, x - (offX + rawW));
-        const qy = Math.max(offY - y, 0, y - (offY + rawH));
-        const distOutside = Math.hypot(qx, qy);
+  const parsed = blurs.map(b => {
+    const r = Math.min(16, Math.min(b.w, b.h) / 2);
+    return {
+      cx: b.x + b.w / 2,
+      cy: b.y + b.h / 2,
+      hx: Math.max(0, b.w / 2 - r),
+      hy: Math.max(0, b.h / 2 - r),
+      r: r
+    };
+  });
 
-        let alpha = 1.0;
-        if (distOutside > 0) {
-          const t = Math.max(0, 1 - distOutside / feather);
-          alpha = t * t * (3 - 2 * t);
+  const mask = document.createElement('canvas');
+  mask.width = rw;
+  mask.height = rh;
+  const mctx = mask.getContext('2d');
+  const mData = mctx.createImageData(rw, rh);
+  const mpx = mData.data;
+
+  for (let ly = 0; ly < rh; ly++) {
+    const y = minY + ly;
+    for (let lx = 0; lx < rw; lx++) {
+      const x = minX + lx;
+      let dUnion = 999999;
+      for (let i = 0; i < parsed.length; i++) {
+        const b = parsed[i];
+        const dx = Math.abs(x - b.cx) - b.hx;
+        const dy = Math.abs(y - b.cy) - b.hy;
+        const qx = Math.max(dx, 0);
+        const qy = Math.max(dy, 0);
+        const outsideDist = Math.hypot(qx, qy) - b.r;
+        const insideDist = Math.min(Math.max(dx, dy), 0) - b.r;
+        const d = outsideDist > 0 ? outsideDist : insideDist;
+
+        if (d < dUnion) {
+          dUnion = d;
         }
+      }
 
-        const idx = (y * sw + x) * 4;
+      let alpha = 0;
+      if (dUnion <= 0) {
+        alpha = 255;
+      } else if (dUnion < feather) {
+        const t = 1 - dUnion / feather;
+        alpha = Math.round(t * t * (3 - 2 * t) * 255);
+      }
+
+      if (alpha > 0) {
+        const idx = (ly * rw + lx) * 4;
         mpx[idx] = 255;
         mpx[idx + 1] = 255;
         mpx[idx + 2] = 255;
-        mpx[idx + 3] = Math.round(alpha * 255);
+        mpx[idx + 3] = alpha;
       }
     }
-    mctx.putImageData(mData, 0, 0);
-
-    // Composite blurred patch with feathered alpha mask
-    const off = document.createElement('canvas');
-    off.width = sw;
-    off.height = sh;
-    const octx = off.getContext('2d');
-    octx.drawImage(tempSource, sx - x0, sy - y0, sw, sh, 0, 0, sw, sh);
-    octx.globalCompositeOperation = 'destination-in';
-    octx.drawImage(mask, 0, 0);
-
-    return { off, sx, sy, sw, sh };
-  } catch (err) {
-    console.error("Gaussian blur bake error:", err);
-    return null;
   }
+  mctx.putImageData(mData, 0, 0);
+
+  const comp = document.createElement('canvas');
+  comp.width = rw;
+  comp.height = rh;
+  const cctx = comp.getContext('2d');
+  cctx.drawImage(cachedBaseBlur, minX, minY, rw, rh, 0, 0, rw, rh);
+  cctx.globalCompositeOperation = 'destination-in';
+  cctx.drawImage(mask, 0, 0);
+
+  cachedBlurComposite = { off: comp, x: minX, y: minY };
+  ctx.drawImage(comp, minX, minY);
 }
 
 function bakeErase(a) {
@@ -1680,9 +1730,9 @@ function bakeErase(a) {
 }
 
 function renderRedaction(a) {
+  if (a.type === 'blur') return; // Handled by unified renderBlurLayer()
   if (!a.baked) {
-    if (a.type === 'blur') a.baked = bakeBlur(a);
-    else if (a.type === 'erase') a.baked = bakeErase(a);
+    if (a.type === 'erase') a.baked = bakeErase(a);
     else a.baked = bakePixelate(a);
   }
   if (a.baked) {
@@ -1731,7 +1781,8 @@ function renderBoxSelection(a) {
   ctx.setLineDash([4, 4]);
   if (a.type === 'blur') {
     ctx.beginPath();
-    ctx.roundRect(a.x, a.y, a.w, a.h, 6);
+    const r = Math.min(16, Math.min(a.w, a.h) / 2);
+    ctx.roundRect(a.x, a.y, a.w, a.h, r);
     ctx.stroke();
   } else {
     ctx.strokeRect(a.x, a.y, a.w, a.h);
@@ -1930,6 +1981,7 @@ function undo() {
   if (history.length > 0) {
     annotations = history.pop();
     selectedAnnotation = null;
+    cachedBlurComposite = null;
     redraw();
   }
 }
@@ -2030,6 +2082,7 @@ function handleKeyDown(e) {
     if (selectedAnnotation) {
       saveHistoryState();
       annotations = annotations.filter(a => a !== selectedAnnotation);
+      cachedBlurComposite = null;
       selectedAnnotation = null;
       redraw();
     }
