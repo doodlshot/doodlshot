@@ -14,6 +14,9 @@ import threading
 import time
 from pathlib import Path
 
+# Ensure src directory is in sys.path
+sys.path.insert(0, str(Path(__file__).parent.resolve()))
+
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('WebKit', '6.0')
@@ -285,6 +288,11 @@ class DoodlshotApp:
                     js = f"window.onStitchResult && window.onStitchResult({json.dumps(payload)});"
                     self.web_view.evaluate_javascript(js, -1, None, None, None, None, None)
 
+            elif action == "start_record":
+                main_script = str(Path(__file__).resolve())
+                subprocess.Popen([sys.executable, main_script, "-r"])
+                self.app.quit()
+
             elif action == "save" and data:
                 if "," in data:
                     b64_data = data.split(",", 1)[1]
@@ -312,6 +320,18 @@ def main():
 
     if len(sys.argv) > 1:
         arg = sys.argv[1]
+        if arg in ["--record", "-r", "--record-screen", "--record-area"]:
+            from recorder import toggle_recording
+            toggle_recording()
+            sys.exit(0)
+        elif arg == "--stop-record":
+            from recorder import stop_recording, launch_video_share_modal, copy_video_to_clipboard
+            vid = stop_recording()
+            if vid:
+                copy_video_to_clipboard(vid)
+                launch_video_share_modal(vid)
+            sys.exit(0)
+
         if arg == "-f" and len(sys.argv) > 2:
             arg = sys.argv[2]
 

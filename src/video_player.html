@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Doodlshot - Video Recording</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+    body {
+      background: #111114;
+      color: #f4f4f5;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 18px 24px 20px 24px;
+      gap: 14px;
+    }
+
+    .header-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .icon-wrap {
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #ef4444;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .title-text {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+    }
+
+    .stats-pill {
+      font-size: 11px;
+      font-weight: 600;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      padding: 3px 9px;
+      border-radius: 9999px;
+      color: #a1a1aa;
+    }
+
+    .video-viewport {
+      flex: 1;
+      background: #09090b;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+      position: relative;
+    }
+
+    video {
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: 11px;
+      outline: none;
+    }
+
+    .actions-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      gap: 10px;
+    }
+
+    .actions-left, .actions-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    button {
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 8px;
+      padding: 7px 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+      border: none;
+    }
+
+    .btn-primary {
+      background: #2563eb;
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+    }
+    .btn-primary:hover {
+      background: #1d4ed8;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: #f4f4f5;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.14);
+      color: #ffffff;
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.12);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.25);
+    }
+    .btn-danger:hover {
+      background: #ef4444;
+      color: #ffffff;
+    }
+
+    .toast {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(24, 24, 27, 0.95);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.6);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .toast.shown {
+      opacity: 1;
+      transform: translateX(-50%) translateY(-4px);
+    }
+  </style>
+</head>
+<body>
+  <div class="header-bar">
+    <div class="title-group">
+      <div class="icon-wrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="23 7 16 12 23 17 23 7"/>
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+        </svg>
+      </div>
+      <div>
+        <div class="title-text" id="video-filename">Screen Recording</div>
+      </div>
+    </div>
+    <div class="stats-pill" id="video-stats">0s · 0.0 MB</div>
+  </div>
+
+  <div class="video-viewport">
+    <video id="video-player" controls autoplay loop playsinline></video>
+    <div id="toast" class="toast">Copied to clipboard!</div>
+  </div>
+
+  <div class="actions-bar">
+    <div class="actions-left">
+      <button class="btn-primary" id="btn-copy">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy Video
+      </button>
+      <button class="btn-secondary" id="btn-folder">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Open in Folder
+      </button>
+      <button class="btn-secondary" id="btn-gif">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        Convert to GIF
+      </button>
+    </div>
+    <div class="actions-right">
+      <button class="btn-danger" id="btn-delete" title="Move video to trash">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        Delete
+      </button>
+      <button class="btn-secondary" id="btn-close">Done</button>
+    </div>
+  </div>
+
+  <script>
+    let currentVideoPath = '';
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      if (!t) return;
+      t.textContent = msg;
+      t.classList.add('shown');
+      setTimeout(() => t.classList.remove('shown'), 2500);
+    }
+
+    function sendToHost(action, data) {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.doodlshot_video) {
+        window.webkit.messageHandlers.doodlshot_video.postMessage({ action, data });
+      }
+    }
+
+    window.initVideo = function(meta) {
+      if (!meta) return;
+      currentVideoPath = meta.file;
+      const player = document.getElementById('video-player');
+      const filenameEl = document.getElementById('video-filename');
+      const statsEl = document.getElementById('video-stats');
+
+      if (filenameEl) filenameEl.textContent = meta.filename || 'Screen Recording';
+      if (statsEl) {
+        statsEl.textContent = `${meta.duration}s · ${meta.size_mb} MB · ${meta.width}×${meta.height}`;
+      }
+      if (player && meta.file) {
+        player.src = `file://${meta.file}`;
+      }
+    };
+
+    document.getElementById('btn-copy').addEventListener('click', () => {
+      sendToHost('copy_video', currentVideoPath);
+      showToast('Copied video to clipboard!');
+    });
+
+    document.getElementById('btn-folder').addEventListener('click', () => {
+      sendToHost('open_folder', currentVideoPath);
+    });
+
+    document.getElementById('btn-gif').addEventListener('click', () => {
+      showToast('Generating high-quality GIF...');
+      sendToHost('make_gif', currentVideoPath);
+    });
+
+    document.getElementById('btn-delete').addEventListener('click', () => {
+      if (confirm('Delete this recording?')) {
+        sendToHost('delete_video', currentVideoPath);
+      }
+    });
+
+    document.getElementById('btn-close').addEventListener('click', () => {
+      sendToHost('close', null);
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        sendToHost('close', null);
+      } else if (e.key.toLowerCase() === 'c' && (e.ctrlKey || e.metaKey)) {
+        sendToHost('copy_video', currentVideoPath);
+        showToast('Copied video to clipboard!');
+      }
+    });
+  </script>
+</body>
+</html>

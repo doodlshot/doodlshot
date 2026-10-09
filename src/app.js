@@ -218,6 +218,15 @@ function initUI() {
     });
   }
 
+  // Screen recording button
+  const recordVideoBtn = document.getElementById('btn-record-video');
+  if (recordVideoBtn) {
+    recordVideoBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sendToBackend('start_record', null);
+    });
+  }
+
   const stitchCloseBtn = document.getElementById('stitch-close-btn');
   if (stitchCloseBtn) {
     stitchCloseBtn.addEventListener('click', (e) => {
@@ -2924,6 +2933,20 @@ function applyStitch(newImageUri, direction = 'vertical', gap = 0, align = 'cent
 
 function handleKeyDown(e) {
   if (textEditor.style.display === 'block') return;
+
+  // Screen recording shortcut (Ctrl+Shift+R)
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'r') {
+    e.preventDefault();
+    sendToBackend('start_record', null);
+    return;
+  }
+
+  // Stitch panel shortcut (Shift+S)
+  if (!e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    toggleStitchPanel();
+    return;
+  }
 
   // Pixel Color Inspector Tab shortcut
   if (e.key === 'Tab') {
