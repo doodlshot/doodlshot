@@ -1,4 +1,11 @@
 @font-face {
+  font-family: 'Noteworthy';
+  font-style: normal;
+  font-weight: bold;
+  src: url('../assets/Noteworthy-Bold.ttf') format('truetype');
+}
+
+@font-face {
   font-family: 'Shantell Sans';
   font-style: normal;
   font-weight: 600;
@@ -7,14 +14,14 @@
 
 :root {
   --bg-app: #18181b;
-  --bg-toolbar: rgba(28, 28, 32, 0.88);
+  --bg-toolbar: rgba(28, 28, 32, 0.90);
   --border-toolbar: rgba(255, 255, 255, 0.12);
   --text-main: #f4f4f5;
   --text-muted: #a1a1aa;
-  --accent: #ff3b30;
+  --accent: #ff453a;
   --btn-hover: rgba(255, 255, 255, 0.1);
   --btn-active: rgba(255, 255, 255, 0.2);
-  --shadow-ui: 0 12px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-ui: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
 * {
@@ -45,27 +52,27 @@ body {
   z-index: 1000;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
+  gap: 7px;
+  padding: 5px 14px;
   background: var(--bg-toolbar);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--border-toolbar);
   border-radius: 9999px;
   box-shadow: var(--shadow-ui);
 }
 
 .brand-badge {
-  font-family: 'Shantell Sans', cursive, sans-serif;
-  font-size: 15px;
-  font-weight: 700;
-  color: #ff3b30;
-  margin-right: 6px;
+  font-family: 'Noteworthy', cursive, sans-serif;
+  font-size: 17px;
+  font-weight: bold;
+  color: #ff453a;
+  margin-right: 4px;
   padding-right: 10px;
   border-right: 1px solid rgba(255, 255, 255, 0.15);
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
 }
 
 .tool-group {
@@ -84,8 +91,8 @@ body {
   background: transparent;
   border: none;
   color: var(--text-muted);
-  width: 34px;
-  height: 34px;
+  width: 33px;
+  height: 33px;
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -113,34 +120,34 @@ body {
 .tool-btn.active {
   background: var(--btn-active);
   color: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 /* Colors palette */
 .color-swatch-wrap {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   padding: 0 4px;
 }
 
 .color-dot {
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
   border-radius: 50%;
   cursor: pointer;
   border: 2px solid transparent;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .color-dot:hover {
-  transform: scale(1.18);
+  transform: scale(1.22);
 }
 
 .color-dot.active {
-  transform: scale(1.18);
+  transform: scale(1.22);
   border-color: #ffffff;
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
 }
 
 /* Action buttons */
@@ -150,7 +157,7 @@ body {
   color: var(--text-main);
   font-size: 13px;
   font-weight: 500;
-  padding: 6px 12px;
+  padding: 5px 12px;
   border-radius: 999px;
   cursor: pointer;
   display: flex;
@@ -164,14 +171,14 @@ body {
 }
 
 .action-btn.primary {
-  background: #ff3b30;
-  border-color: #ff3b30;
+  background: #ff453a;
+  border-color: #ff453a;
   color: #ffffff;
   font-weight: 600;
 }
 
 .action-btn.primary:hover {
-  background: #e02424;
+  background: #e03227;
 }
 
 /* Canvas viewport */
@@ -205,9 +212,9 @@ body {
   position: fixed;
   bottom: 16px;
   right: 18px;
-  background: rgba(20, 20, 24, 0.8);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(20, 20, 24, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   padding: 4px 10px;
   border-radius: 6px;
   font-size: 11px;
@@ -220,22 +227,17 @@ body {
 #text-editor-input {
   position: absolute;
   display: none;
-  background: transparent;
-  border: 1.5px dashed var(--accent);
+  background: rgba(24, 24, 27, 0.3);
+  backdrop-filter: blur(4px);
+  border: 2px dashed var(--accent);
   outline: none;
-  font-family: 'Shantell Sans', cursive, sans-serif;
+  font-family: 'Noteworthy', cursive, sans-serif;
+  font-weight: bold;
   color: var(--accent);
-  line-height: 1.2;
+  line-height: 1.25;
   padding: 4px 8px;
   white-space: pre;
   resize: none;
   border-radius: 4px;
   z-index: 500;
-}
-
-/* Tooltip helper */
-.shortcut-hint {
-  font-size: 10px;
-  opacity: 0.6;
-  margin-left: 2px;
 }

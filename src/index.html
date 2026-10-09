@@ -27,19 +27,39 @@
       </button>
       <button class="tool-btn active" id="tool-arrow" title="Bendable Curved Arrow (A)">
         <svg viewBox="0 0 24 24">
-          <path d="M4 20 C 10 18, 14 10, 20 5"/>
-          <path d="M14 4 L 20 5 L 19 11"/>
+          <path d="M 4 19 Q 8 8 18 5"/>
+          <polyline points="11 5 18 5 18 12"/>
         </svg>
       </button>
       <button class="tool-btn" id="tool-oval" title="Hand-drawn Oval (O)">
         <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="6"/></svg>
       </button>
       <button class="tool-btn" id="tool-rect" title="Hand-drawn Rectangle (R)">
-        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/></svg>
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/></svg>
       </button>
-      <button class="tool-btn" id="tool-cloud" title="Hand-drawn Cloud (C)">
+      <button class="tool-btn" id="tool-cloud" title="Callout Cloud (C)">
         <svg viewBox="0 0 24 24">
-          <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+          <path d="M 5.5 17 A 3.5 3.5 0 0 1 5 10 A 4.5 4.5 0 0 1 12 7 A 5 5 0 0 1 19 10 A 3.5 3.5 0 0 1 18.5 17 Z"/>
+        </svg>
+      </button>
+      <button class="tool-btn" id="tool-step" title="Numbered Step Badge 1, 2, 3 (N)">
+        <svg viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 8v8M10 10l2-2"/>
+        </svg>
+      </button>
+      <button class="tool-btn" id="tool-highlighter" title="Highlighter Marker (H)">
+        <svg viewBox="0 0 24 24">
+          <path d="M14 2l4 4L7 17H3v-4L14 2z"/>
+          <path d="M3 22h18"/>
+        </svg>
+      </button>
+      <button class="tool-btn" id="tool-magnifier" title="Magnifier Loupe (M)">
+        <svg viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          <line x1="11" y1="8" x2="11" y2="14"/>
+          <line x1="8" y1="11" x2="14" y2="11"/>
         </svg>
       </button>
       <button class="tool-btn" id="tool-pen" title="Freehand Pen (P)">
@@ -51,22 +71,29 @@
       <button class="tool-btn" id="tool-pixelate" title="Pixelate / Redact (X)">
         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7" fill="currentColor"/><rect x="3" y="14" width="7" height="7" fill="currentColor"/><rect x="14" y="14" width="7" height="7"/></svg>
       </button>
+      <button class="tool-btn" id="tool-crop" title="Crop Canvas (K)">
+        <svg viewBox="0 0 24 24">
+          <path d="M6 2v14a2 2 0 0 0 2 2h14"/>
+          <path d="M18 22V8a2 2 0 0 0-2-2H2"/>
+        </svg>
+      </button>
     </div>
 
-    <!-- Color Palette -->
+    <!-- Premium Color Palette -->
     <div class="tool-group color-swatch-wrap">
-      <div class="color-dot active" data-color="#ff3b30" style="background: #ff3b30;" title="Shottr Red"></div>
-      <div class="color-dot" data-color="#ffcc00" style="background: #ffcc00;" title="Warm Yellow"></div>
-      <div class="color-dot" data-color="#007aff" style="background: #007aff;" title="Vibrant Blue"></div>
-      <div class="color-dot" data-color="#34c759" style="background: #34c759;" title="Green"></div>
-      <div class="color-dot" data-color="#ffffff" style="background: #ffffff;" title="White"></div>
-      <div class="color-dot" data-color="#1c1c1e" style="background: #1c1c1e; border: 1px solid rgba(255,255,255,0.3);" title="Black"></div>
+      <div class="color-dot active" data-color="#ff453a" style="background: #ff453a;" title="Apple Coral Red"></div>
+      <div class="color-dot" data-color="#f5a623" style="background: #f5a623;" title="Golden Amber"></div>
+      <div class="color-dot" data-color="#0a84ff" style="background: #0a84ff;" title="Electric Sky"></div>
+      <div class="color-dot" data-color="#30d158" style="background: #30d158;" title="Emerald Green"></div>
+      <div class="color-dot" data-color="#bf5af2" style="background: #bf5af2;" title="Royal Violet"></div>
+      <div class="color-dot" data-color="#ffffff" style="background: #ffffff;" title="Crisp White"></div>
+      <div class="color-dot" data-color="#27272a" style="background: #27272a; border: 1px solid rgba(255,255,255,0.35);" title="Dark Charcoal"></div>
     </div>
 
     <!-- Stroke width -->
     <div class="tool-group">
-      <button class="tool-btn" id="stroke-thin" title="Thin Stroke (2px)" style="font-size: 11px;">1x</button>
-      <button class="tool-btn active" id="stroke-medium" title="Medium Stroke (4px)" style="font-size: 13px; font-weight: bold;">2x</button>
+      <button class="tool-btn" id="stroke-thin" title="Thin Stroke (2.5px)" style="font-size: 11px;">1x</button>
+      <button class="tool-btn active" id="stroke-medium" title="Medium Stroke (4.5px)" style="font-size: 13px; font-weight: bold;">2x</button>
       <button class="tool-btn" id="stroke-thick" title="Thick Stroke (7px)" style="font-size: 15px; font-weight: 900;">3x</button>
     </div>
 
