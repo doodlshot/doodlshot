@@ -16,10 +16,11 @@ let annotations = [];
 let history = [];
 let activeTool = 'arrow';
 let activeColor = '#ff3b30';
-let activeWidth = 4;
+let activeWidth = 4.5;
 let activeRoughness = 1.4;
 
 let isDrawing = false;
+let pointerDownPos = null;
 let currentAnnotation = null;
 let selectedAnnotation = null;
 let activeHandle = null; // 'p0', 'p1', 'p2' for bendable arrow
@@ -55,12 +56,14 @@ function initUI() {
 
   // Color picker
   document.querySelectorAll('.color-dot').forEach(dot => {
-    dot.addEventListener('click', () => {
+    dot.addEventListener('click', (e) => {
+      e.stopPropagation();
       document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
       dot.classList.add('active');
       activeColor = dot.getAttribute('data-color');
       if (selectedAnnotation) {
         selectedAnnotation.color = activeColor;
+        selectedAnnotation.drawable = null; // invalidate cached shape
         redraw();
       }
     });
@@ -75,15 +78,31 @@ function initUI() {
   strokeButtons.forEach(s => {
     const btn = document.getElementById(s.id);
     if (btn) {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         strokeButtons.forEach(b => document.getElementById(b.id).classList.remove('active'));
         btn.classList.add('active');
         activeWidth = s.w;
         if (selectedAnnotation) {
           selectedAnnotation.width = activeWidth;
+          selectedAnnotation.drawable = null; // invalidate cached shape
           redraw();
         }
       });
+    }
+  });
+
+  // Deselect when clicking outside the canvas (on background viewport)
+  document.getElementById('canvas-viewport').addEventListener('mousedown', (e) => {
+    if (e.target.id === 'canvas-viewport') {
+      if (textEditor.style.display === 'block') {
+        finalizeText();
+      }
+      if (selectedAnnotation) {
+        selectedAnnotation = null;
+        activeHandle = null;
+        redraw();
+      }
     }
   });
 
@@ -105,11 +124,12 @@ function initUI() {
   textEditor.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      textEditor.blur();
+      finalizeText();
     }
     if (e.key === 'Escape') {
       textEditor.value = '';
-      textEditor.blur();
+      textEditor.style.display = 'none';
+      activeTextPos = null;
     }
   });
 }
@@ -123,9 +143,9 @@ function setTool(tool) {
   if (activeBtn) activeBtn.classList.add('active');
   badgeTool.textContent = toolLabels[tool] || tool;
 
-  if (tool !== 'select' && activeHandle === null) {
-    selectedAnnotation = null;
-  }
+  // Clear selection so user is ready to draw fresh with current toolbar settings!
+  selectedAnnotation = null;
+  activeHandle = null;
   redraw();
 }
 
@@ -140,11 +160,9 @@ function loadImage() {
     redraw();
   };
 
-  // Check if Python injected a screenshot via data URI
   if (window.INITIAL_IMAGE_DATA) {
     baseImage.src = window.INITIAL_IMAGE_DATA;
   } else {
-    // Generate a clean test mockup screenshot
     createMockScreenshot();
   }
 }
@@ -155,14 +173,12 @@ function createMockScreenshot() {
   offscreen.height = 600;
   const octx = offscreen.getContext('2d');
 
-  // Modern subtle dark gradient
   const grad = octx.createLinearGradient(0, 0, 960, 600);
   grad.addColorStop(0, '#27272a');
   grad.addColorStop(1, '#09090b');
   octx.fillStyle = grad;
   octx.fillRect(0, 0, 960, 600);
 
-  // Decorative UI mock window
   octx.fillStyle = 'rgba(255, 255, 255, 0.05)';
   octx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
   octx.lineWidth = 1;
@@ -170,7 +186,6 @@ function createMockScreenshot() {
   octx.fill();
   octx.stroke();
 
-  // Traffic lights
   const dots = ['#ff5f56', '#ffbd2e', '#27c93f'];
   dots.forEach((c, idx) => {
     octx.beginPath();
@@ -179,7 +194,6 @@ function createMockScreenshot() {
     octx.fill();
   });
 
-  // Mock text
   octx.fillStyle = 'rgba(255, 255, 255, 0.7)';
   octx.font = '22px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
   octx.fillText('Doodlshot Canvas Ready', 110, 190);
@@ -209,6 +223,7 @@ function getCanvasPos(e) {
 
 function onPointerDown(e) {
   const pos = getCanvasPos(e);
+  pointerDownPos = pos;
 
   // If text editor is open, commit existing text first!
   if (textEditor.style.display === 'block') {
@@ -216,7 +231,7 @@ function onPointerDown(e) {
     return;
   }
 
-  // If in select mode or clicking near an arrow handle
+  // If clicking near a handle of the currently selected arrow
   if (selectedAnnotation && selectedAnnotation.type === 'arrow') {
     const handle = hitTestArrowHandles(selectedAnnotation, pos);
     if (handle) {
@@ -226,7 +241,7 @@ function onPointerDown(e) {
     }
   }
 
-  // Check if clicking existing annotation to select it
+  // If in select mode
   if (activeTool === 'select') {
     const hit = findAnnotationAt(pos);
     selectedAnnotation = hit;
@@ -245,6 +260,8 @@ function onPointerDown(e) {
     return;
   }
 
+  // If we already have something selected and user clicks somewhere else to draw:
+  // We'll prepare drawing, but if it's just a click (dist < 6px), onPointerUp will deselect instead!
   isDrawing = true;
   saveHistoryState();
   const randSeed = Math.floor(Math.random() * 65536) + 1;
@@ -258,7 +275,8 @@ function onPointerDown(e) {
       color: activeColor,
       width: activeWidth,
       roughness: activeRoughness,
-      seed: randSeed
+      seed: randSeed,
+      drawable: null
     };
   } else if (activeTool === 'oval') {
     currentAnnotation = {
@@ -272,7 +290,8 @@ function onPointerDown(e) {
       color: activeColor,
       width: activeWidth,
       roughness: activeRoughness,
-      seed: randSeed
+      seed: randSeed,
+      drawable: null
     };
   } else if (activeTool === 'rect') {
     currentAnnotation = {
@@ -286,7 +305,8 @@ function onPointerDown(e) {
       color: activeColor,
       width: activeWidth,
       roughness: activeRoughness,
-      seed: randSeed
+      seed: randSeed,
+      drawable: null
     };
   } else if (activeTool === 'cloud') {
     currentAnnotation = {
@@ -300,7 +320,8 @@ function onPointerDown(e) {
       color: activeColor,
       width: activeWidth,
       roughness: activeRoughness,
-      seed: randSeed
+      seed: randSeed,
+      drawable: null
     };
   } else if (activeTool === 'pen') {
     currentAnnotation = {
@@ -309,7 +330,8 @@ function onPointerDown(e) {
       color: activeColor,
       width: activeWidth,
       roughness: activeRoughness,
-      seed: randSeed
+      seed: randSeed,
+      drawable: null
     };
   } else if (activeTool === 'pixelate') {
     currentAnnotation = {
@@ -338,6 +360,7 @@ function onPointerMove(e) {
     } else if (activeHandle === 'p2') {
       selectedAnnotation.p2 = { x: pos.x, y: pos.y };
     }
+    selectedAnnotation.drawable = null; // Regenerate this arrow's path
     redraw();
     return;
   }
@@ -346,34 +369,38 @@ function onPointerMove(e) {
 
   if (currentAnnotation.type === 'arrow') {
     currentAnnotation.p2 = { x: pos.x, y: pos.y };
-    // Default curve handle sits right at midpoint while initially dragging
     currentAnnotation.p1 = {
       x: (currentAnnotation.p0.x + currentAnnotation.p2.x) / 2,
       y: (currentAnnotation.p0.y + currentAnnotation.p2.y) / 2
     };
+    currentAnnotation.drawable = null;
   } else if (currentAnnotation.type === 'oval') {
     currentAnnotation.cx = (currentAnnotation.startX + pos.x) / 2;
     currentAnnotation.cy = (currentAnnotation.startY + pos.y) / 2;
     currentAnnotation.rx = Math.abs(pos.x - currentAnnotation.startX) / 2;
     currentAnnotation.ry = Math.abs(pos.y - currentAnnotation.startY) / 2;
+    currentAnnotation.drawable = null;
   } else if (currentAnnotation.type === 'rect' || currentAnnotation.type === 'cloud' || currentAnnotation.type === 'pixelate') {
     currentAnnotation.x = Math.min(currentAnnotation.startX, pos.x);
     currentAnnotation.y = Math.min(currentAnnotation.startY, pos.y);
     currentAnnotation.w = Math.abs(pos.x - currentAnnotation.startX);
     currentAnnotation.h = Math.abs(pos.y - currentAnnotation.startY);
+    currentAnnotation.drawable = null;
   } else if (currentAnnotation.type === 'pen') {
     currentAnnotation.points.push({ x: pos.x, y: pos.y });
+    currentAnnotation.drawable = null;
   }
 
   redraw();
-  if (currentAnnotation) {
-    renderAnnotation(currentAnnotation, true);
-  }
 }
 
 function onPointerUp(e) {
   if (!isDrawing) return;
   isDrawing = false;
+  const pos = getCanvasPos(e);
+
+  // Check if this was a simple click (not a drag)
+  const clickDist = pointerDownPos ? Math.hypot(pos.x - pointerDownPos.x, pos.y - pointerDownPos.y) : 0;
 
   if (activeHandle) {
     activeHandle = null;
@@ -381,19 +408,30 @@ function onPointerUp(e) {
     return;
   }
 
+  // If user simply clicked on empty space without dragging:
+  // DESELECT any currently selected item!
+  if (clickDist < 6) {
+    currentAnnotation = null;
+    if (selectedAnnotation) {
+      selectedAnnotation = null;
+      activeHandle = null;
+      redraw();
+      return;
+    }
+  }
+
   if (currentAnnotation) {
-    // If it's an arrow, automatically select it so user immediately sees the bend handle!
     if (currentAnnotation.type === 'arrow') {
-      // Offset the midpoint slightly so it has a gentle natural curve preview
       const dx = currentAnnotation.p2.x - currentAnnotation.p0.x;
       const dy = currentAnnotation.p2.y - currentAnnotation.p0.y;
       const dist = Math.hypot(dx, dy);
       if (dist > 15) {
-        // Subtle offset perpendicular to line
+        // Subtle offset perpendicular to line for an organic curve
         const perpX = -dy / dist * (dist * 0.12);
         const perpY = dx / dist * (dist * 0.12);
         currentAnnotation.p1.x += perpX;
         currentAnnotation.p1.y += perpY;
+        currentAnnotation.drawable = null; // generate once
         annotations.push(currentAnnotation);
         selectedAnnotation = currentAnnotation;
       }
@@ -407,44 +445,48 @@ function onPointerUp(e) {
 }
 
 // ----------------------------------------------------
-// Rendering Pipeline
+// Cached Vector Geometry Engine (0% Shimmering)
 // ----------------------------------------------------
 
-function redraw(includeHandles = true) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+function getCachedDrawable(a) {
+  if (a.drawable) return a.drawable;
 
-  if (baseImage) {
-    ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
-  }
-
-  // Draw pixelations first (under vector drawings)
-  annotations.filter(a => a.type === 'pixelate').forEach(a => renderPixelate(a));
-
-  // Draw vector annotations
-  annotations.filter(a => a.type !== 'pixelate').forEach(a => renderAnnotation(a));
-
-  // Draw active drawing annotation
-  if (currentAnnotation && isDrawing) {
-    if (currentAnnotation.type === 'pixelate') {
-      renderPixelate(currentAnnotation);
-    } else {
-      renderAnnotation(currentAnnotation);
-    }
-  }
-
-  // Draw selection & bend handles
-  if (includeHandles && selectedAnnotation && selectedAnnotation.type === 'arrow') {
-    renderArrowHandles(selectedAnnotation);
-  }
-}
-
-function renderAnnotation(a, isDraft = false) {
+  const gen = rc.generator;
   const seed = a.seed || 42;
+  let d = null;
+
   if (a.type === 'arrow') {
-    renderBendableArrow(a);
+    const curvePath = `M ${a.p0.x} ${a.p0.y} Q ${a.p1.x} ${a.p1.y} ${a.p2.x} ${a.p2.y}`;
+    const curveD = gen.path(curvePath, {
+      stroke: a.color,
+      strokeWidth: a.width,
+      roughness: a.roughness,
+      bowing: 1.2,
+      seed: seed
+    });
+
+    const tx = a.p2.x - a.p1.x;
+    const ty = a.p2.y - a.p1.y;
+    const angle = Math.atan2(ty, tx);
+    const headLen = Math.max(16, a.width * 4.2);
+    const headAngle = 0.52;
+
+    const w1x = a.p2.x - headLen * Math.cos(angle - headAngle);
+    const w1y = a.p2.y - headLen * Math.sin(angle - headAngle);
+    const w2x = a.p2.x - headLen * Math.cos(angle + headAngle);
+    const w2y = a.p2.y - headLen * Math.sin(angle + headAngle);
+
+    const headD = gen.linearPath([[w1x, w1y], [a.p2.x, a.p2.y], [w2x, w2y]], {
+      stroke: a.color,
+      strokeWidth: a.width,
+      roughness: a.roughness,
+      seed: seed + 7
+    });
+
+    d = [curveD, headD];
   } else if (a.type === 'oval') {
     if (a.rx > 2 && a.ry > 2) {
-      rc.ellipse(a.cx, a.cy, a.rx * 2, a.ry * 2, {
+      d = gen.ellipse(a.cx, a.cy, a.rx * 2, a.ry * 2, {
         stroke: a.color,
         strokeWidth: a.width,
         roughness: a.roughness,
@@ -454,7 +496,7 @@ function renderAnnotation(a, isDraft = false) {
     }
   } else if (a.type === 'rect') {
     if (a.w > 2 && a.h > 2) {
-      rc.rectangle(a.x, a.y, a.w, a.h, {
+      d = gen.rectangle(a.x, a.y, a.w, a.h, {
         stroke: a.color,
         strokeWidth: a.width,
         roughness: a.roughness,
@@ -464,94 +506,85 @@ function renderAnnotation(a, isDraft = false) {
     }
   } else if (a.type === 'cloud') {
     if (a.w > 10 && a.h > 10) {
-      renderCloud(a);
+      const cx = a.x + a.w / 2;
+      const cy = a.y + a.h / 2;
+      const rx = a.w / 2;
+      const ry = a.h / 2;
+      const points = [];
+      const count = 10;
+      for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2;
+        const bump = (i % 2 === 0) ? 1.15 : 0.95;
+        points.push([
+          cx + Math.cos(angle) * rx * bump,
+          cy + Math.sin(angle) * ry * bump
+        ]);
+      }
+      points.push(points[0]);
+      d = gen.curve(points, {
+        stroke: a.color,
+        strokeWidth: a.width,
+        roughness: a.roughness + 0.3,
+        bowing: 2.0,
+        seed: seed
+      });
     }
   } else if (a.type === 'pen') {
     if (a.points.length > 1) {
-      renderPen(a);
+      d = gen.curve(a.points.map(p => [p.x, p.y]), {
+        stroke: a.color,
+        strokeWidth: a.width,
+        roughness: 0.8,
+        seed: seed
+      });
     }
-  } else if (a.type === 'text') {
+  }
+
+  a.drawable = d;
+  return d;
+}
+
+function redraw(includeHandles = true) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (baseImage) {
+    ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
+  }
+
+  // Draw pixelations first
+  annotations.filter(a => a.type === 'pixelate').forEach(a => renderPixelate(a));
+
+  // Draw static, cached vector annotations
+  annotations.filter(a => a.type !== 'pixelate').forEach(a => renderAnnotation(a));
+
+  // Draw active drawing shape
+  if (currentAnnotation && isDrawing) {
+    if (currentAnnotation.type === 'pixelate') {
+      renderPixelate(currentAnnotation);
+    } else {
+      renderAnnotation(currentAnnotation);
+    }
+  }
+
+  // Draw selection handles for the selected arrow
+  if (includeHandles && selectedAnnotation && selectedAnnotation.type === 'arrow') {
+    renderArrowHandles(selectedAnnotation);
+  }
+}
+
+function renderAnnotation(a) {
+  if (a.type === 'text') {
     renderText(a);
+    return;
   }
-}
+  const d = getCachedDrawable(a);
+  if (!d) return;
 
-// The Signature Bendable Arrow
-function renderBendableArrow(a) {
-  const { p0, p1, p2, color, width, roughness } = a;
-  const seed = a.seed || 42;
-
-  // Draw the smooth quadratic Bézier curve with Rough.js path
-  const curvePath = `M ${p0.x} ${p0.y} Q ${p1.x} ${p1.y} ${p2.x} ${p2.y}`;
-  rc.path(curvePath, {
-    stroke: color,
-    strokeWidth: width,
-    roughness: roughness,
-    bowing: 1.2,
-    seed: seed
-  });
-
-  // Calculate tangent at arrow tip p2: T = 2*(p2 - p1)
-  const tx = p2.x - p1.x;
-  const ty = p2.y - p1.y;
-  const angle = Math.atan2(ty, tx);
-
-  // Arrowhead wings
-  const headLen = Math.max(16, width * 4.2);
-  const headAngle = 0.52; // ~30 degrees
-
-  const w1x = p2.x - headLen * Math.cos(angle - headAngle);
-  const w1y = p2.y - headLen * Math.sin(angle - headAngle);
-  const w2x = p2.x - headLen * Math.cos(angle + headAngle);
-  const w2y = p2.y - headLen * Math.sin(angle + headAngle);
-
-  // Hand-drawn arrowhead
-  rc.linearPath([[w1x, w1y], [p2.x, p2.y], [w2x, w2y]], {
-    stroke: color,
-    strokeWidth: width,
-    roughness: roughness,
-    seed: seed + 7
-  });
-}
-
-function renderCloud(a) {
-  const { x, y, w, h, color, width, roughness } = a;
-  const seed = a.seed || 42;
-  // Bumpy cloud path
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-  const rx = w / 2;
-  const ry = h / 2;
-
-  // Approximate cloud with 8 intersecting bumpy arcs
-  const points = [];
-  const count = 10;
-  for (let i = 0; i < count; i++) {
-    const angle = (i / count) * Math.PI * 2;
-    const bump = (i % 2 === 0) ? 1.15 : 0.95;
-    points.push([
-      cx + Math.cos(angle) * rx * bump,
-      cy + Math.sin(angle) * ry * bump
-    ]);
+  if (Array.isArray(d)) {
+    d.forEach(sub => rc.draw(sub));
+  } else {
+    rc.draw(d);
   }
-  points.push(points[0]);
-
-  rc.curve(points, {
-    stroke: color,
-    strokeWidth: width,
-    roughness: roughness + 0.3,
-    bowing: 2.0,
-    seed: seed
-  });
-}
-
-function renderPen(a) {
-  const pts = a.points.map(p => [p.x, p.y]);
-  rc.curve(pts, {
-    stroke: a.color,
-    strokeWidth: a.width,
-    roughness: 0.8,
-    seed: a.seed || 42
-  });
 }
 
 function renderText(a) {
@@ -583,7 +616,6 @@ function renderPixelate(a) {
 
     for (let py = 0; py < sh; py += bs) {
       for (let px = 0; px < sw; px += bs) {
-        // Average color in block
         let r = 0, g = 0, b = 0, count = 0;
         for (let by = 0; by < bs && py + by < sh; by++) {
           for (let bx = 0; bx < bs && px + bx < sw; bx++) {
@@ -615,10 +647,9 @@ function renderArrowHandles(a) {
     { p: a.p2, color: '#ff3b30', label: 'tip' }
   ];
 
-  // Draw dashed guide lines to control point
   ctx.save();
   ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(a.p0.x, a.p0.y);
@@ -626,7 +657,6 @@ function renderArrowHandles(a) {
   ctx.lineTo(a.p2.x, a.p2.y);
   ctx.stroke();
 
-  // Draw handle dots
   handles.forEach(h => {
     ctx.beginPath();
     ctx.arc(h.p.x, h.p.y, 7, 0, Math.PI * 2);
@@ -640,7 +670,7 @@ function renderArrowHandles(a) {
 }
 
 function hitTestArrowHandles(a, pos) {
-  const radius = 14;
+  const radius = 16;
   if (Math.hypot(pos.x - a.p1.x, pos.y - a.p1.y) < radius) return 'p1';
   if (Math.hypot(pos.x - a.p0.x, pos.y - a.p0.y) < radius) return 'p0';
   if (Math.hypot(pos.x - a.p2.x, pos.y - a.p2.y) < radius) return 'p2';
@@ -652,7 +682,6 @@ function findAnnotationAt(pos) {
     const a = annotations[i];
     if (a.type === 'arrow') {
       if (hitTestArrowHandles(a, pos)) return a;
-      // Distance to curve approximation
       const mid = a.p1;
       if (Math.hypot(pos.x - mid.x, pos.y - mid.y) < 30) return a;
     } else if (a.type === 'oval') {
@@ -720,7 +749,13 @@ function finalizeText() {
 // ----------------------------------------------------
 
 function saveHistoryState() {
-  history.push(JSON.parse(JSON.stringify(annotations)));
+  // Deep clone annotations without cached dom/canvas objects
+  const snapshot = annotations.map(a => {
+    const copy = Object.assign({}, a);
+    copy.drawable = null;
+    return copy;
+  });
+  history.push(snapshot);
   if (history.length > 30) history.shift();
 }
 
@@ -737,7 +772,6 @@ function undo() {
 // ----------------------------------------------------
 
 function copyToClipboard() {
-  // Render cleanly without selection handles
   redraw(false);
   const dataUrl = canvas.toDataURL('image/png');
   redraw(true);
@@ -757,7 +791,6 @@ function sendToBackend(action, data) {
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.doodlshot) {
     window.webkit.messageHandlers.doodlshot.postMessage({ action, data });
   } else {
-    // Browser fallback
     if (action === 'copy') {
       canvas.toBlob(blob => {
         navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
@@ -787,6 +820,13 @@ function handleKeyDown(e) {
     e.preventDefault();
     saveToFile();
   } else if (e.key === 'Escape') {
+    // If an annotation is selected, deselect it first!
+    if (selectedAnnotation) {
+      selectedAnnotation = null;
+      activeHandle = null;
+      redraw();
+      return;
+    }
     sendToBackend('exit', null);
   } else if (e.key.toLowerCase() === 'a') {
     setTool('arrow');
