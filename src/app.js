@@ -18,7 +18,13 @@ let activeTool = 'arrow';
 let activeColor = '#ff6b6b'; // Rich Pastel Coral default
 let activeWidth = 4.5;
 let activeRoughness = 1.2;
-let stepCounter = 1;
+
+function getNextStepNumber() {
+  const steps = annotations.filter(a => a.type === 'step');
+  if (steps.length === 0) return 1;
+  const maxNum = Math.max(...steps.map(s => Number(s.number) || 0));
+  return Math.max(1, maxNum + 1);
+}
 
 let isDrawing = false;
 let isMoving = false;
@@ -129,17 +135,21 @@ function initUI() {
   window.addEventListener('mousemove', onPointerMove);
   window.addEventListener('mouseup', onPointerUp);
 
-  // Inline text blur handler
+  // Inline text handlers with full multi-line support
   textEditor.addEventListener('blur', finalizeText);
+  textEditor.addEventListener('input', autoResizeTextEditor);
   textEditor.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
       finalizeText();
+      return;
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      // Natural newline in textarea
+      setTimeout(autoResizeTextEditor, 0);
     }
     if (e.key === 'Escape') {
-      textEditor.value = '';
-      textEditor.style.display = 'none';
-      activeTextPos = null;
+      finalizeText();
     }
   });
 }
@@ -247,12 +257,17 @@ function onPointerDown(e) {
       if (a.type !== 'text') return false;
       const lines = a.text.split('\n');
       const fontSize = a.fontSize || 32;
-      let maxLen = 0;
-      lines.forEach(l => { if (l.length > maxLen) maxLen = l.length; });
-      const w = Math.max(50, maxLen * fontSize * 0.6);
-      const h = Math.max(30, lines.length * fontSize * 1.25);
-      return pos.x >= a.x - 8 && pos.x <= a.x + w + 8 &&
-             pos.y >= a.y - 8 && pos.y <= a.y + h + 8;
+      ctx.save();
+      ctx.font = `bold ${fontSize}px 'Noteworthy', -apple-system, sans-serif`;
+      let maxWidth = 0;
+      lines.forEach(l => {
+        const w = ctx.measureText(l).width;
+        if (w > maxWidth) maxWidth = w;
+      });
+      ctx.restore();
+      const totalH = Math.max(30, lines.length * fontSize * 1.25);
+      return pos.x >= a.x - 8 && pos.x <= a.x + maxWidth + 12 &&
+             pos.y >= a.y - 8 && pos.y <= a.y + totalH + 8;
     });
 
     if (hitText) {
@@ -308,7 +323,7 @@ function onPointerDown(e) {
     return;
   }
 
-  // Step Badge (with aimable pointer tip!)
+  // Step Badge (with aimable pointer teardrop pin!)
   if (activeTool === 'step') {
     saveHistoryState();
     const badge = {
@@ -316,8 +331,8 @@ function onPointerDown(e) {
       x: pos.x,
       y: pos.y,
       tipX: pos.x,
-      tipY: pos.y + 32, // Points downward by default
-      number: stepCounter++,
+      tipY: pos.y + 24, // Compact 7px teardrop pointer
+      number: getNextStepNumber(),
       color: activeColor,
       radius: 17
     };
@@ -541,8 +556,12 @@ function onPointerMove(e) {
     currentAnnotation.y = Math.min(currentAnnotation.startY, pos.y);
     currentAnnotation.w = Math.abs(pos.x - currentAnnotation.startX);
     currentAnnotation.h = Math.abs(pos.y - currentAnnotation.startY);
-    currentAnnotation.tipX = currentAnnotation.x + currentAnnotation.w * 0.15;
-    currentAnnotation.tipY = currentAnnotation.y + currentAnnotation.h + 24;
+    const cx = currentAnnotation.x + currentAnnotation.w / 2;
+    const cy = currentAnnotation.y + currentAnnotation.h / 2;
+    const rx = currentAnnotation.w / 2;
+    const ry = currentAnnotation.h / 2;
+    currentAnnotation.tipX = cx + rx * 0.75;
+    currentAnnotation.tipY = cy + ry + Math.max(18, ry * 0.35);
     currentAnnotation.drawable = null;
   } else if (currentAnnotation.type === 'pixelate') {
     currentAnnotation.x = Math.min(currentAnnotation.startX, pos.x);
@@ -735,41 +754,89 @@ function renderShottrArrow(a) {
   ctx.restore();
 }
 
-// ☁️ Callout Cloud with Pointer Tail
+// ☁️ Callout Cloud with Seamless Integrated Beak
 function generateCalloutCloudPath(a) {
   const { x, y, w, h } = a;
   const cx = x + w / 2;
   const cy = y + h / 2;
-  const rx = w / 2;
-  const ry = h / 2;
-  const tipX = a.tipX !== undefined ? a.tipX : (x + w * 0.15);
-  const tipY = a.tipY !== undefined ? a.tipY : (y + h + 24);
+  const rx = Math.max(10, w / 2);
+  const ry = Math.max(10, h / 2);
+  const tipX = a.tipX !== undefined ? a.tipX : (cx + rx * 0.75);
+  const tipY = a.tipY !== undefined ? a.tipY : (cy + ry + 24);
 
-  const numArcs = 9;
-  const points = [];
-  for (let i = 0; i <= numArcs; i++) {
-    const th = (i / numArcs) * Math.PI * 2;
-    points.push({
-      x: cx + Math.cos(th) * rx,
-      y: cy + Math.sin(th) * ry
-    });
+  const dx = tipX - cx;
+  const dy = tipY - cy;
+  const dist = Math.hypot(dx, dy);
+  const tipAngle = Math.atan2(dy, dx);
+
+  // Boundary radius at tip angle
+  const edgeR = Math.hypot(rx * Math.cos(tipAngle), ry * Math.sin(tipAngle));
+  const hasBeak = dist > (edgeR + 8);
+
+  // Helper converting quadratic Bézier into cubic Bézier for 100% Rough.js compatibility
+  const qToC = (p0x, p0y, cpx, cpy, p2x, p2y) => {
+    const c1x = p0x + (2 / 3) * (cpx - p0x);
+    const c1y = p0y + (2 / 3) * (cpy - p0y);
+    const c2x = p2x + (2 / 3) * (cpx - p2x);
+    const c2y = p2y + (2 / 3) * (cpy - p2y);
+    return `C ${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${p2x.toFixed(1)} ${p2y.toFixed(1)} `;
+  };
+
+  if (!hasBeak) {
+    // Pure fluffy cloud without beak
+    const numArcs = 9;
+    const pts = [];
+    for (let i = 0; i <= numArcs; i++) {
+      const th = (i / numArcs) * Math.PI * 2;
+      pts.push({ x: cx + rx * Math.cos(th), y: cy + ry * Math.sin(th), th });
+    }
+    let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)} `;
+    for (let i = 0; i < numArcs; i++) {
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const midTh = (p1.th + p2.th) / 2;
+      const cpX = cx + (rx * 1.25) * Math.cos(midTh);
+      const cpY = cy + (ry * 1.25) * Math.sin(midTh);
+      d += qToC(p1.x, p1.y, cpX, cpY, p2.x, p2.y);
+    }
+    return d + 'Z';
   }
 
-  let d = `M ${points[0].x} ${points[0].y} `;
-  for (let i = 0; i < numArcs; i++) {
-    const pB = points[i + 1];
-    const midTh = ((i + 0.5) / numArcs) * Math.PI * 2;
-    const cpX = cx + Math.cos(midTh) * (rx * 1.25);
-    const cpY = cy + Math.sin(midTh) * (ry * 1.25);
-    d += `Q ${cpX} ${cpY} ${pB.x} ${pB.y} `;
+  // Cloud with integrated callout beak pointing gracefully to (tipX, tipY)
+  const halfSpan = 0.32; // ~18 deg each side
+  const startTh = tipAngle + halfSpan;
+  const totalArc = Math.PI * 2 - 2 * halfSpan;
+  const steps = 8;
+  const pts = [];
+  for (let i = 0; i <= steps; i++) {
+    const th = startTh + (i / steps) * totalArc;
+    pts.push({ x: cx + rx * Math.cos(th), y: cy + ry * Math.sin(th), th });
   }
 
-  // Add the callout pointy beak towards (tipX, tipY)
-  const tailBase1 = { x: x + w * 0.15, y: y + h };
-  const tailBase2 = { x: x + w * 0.35, y: y + h };
-  d += `M ${tailBase1.x} ${tailBase1.y} L ${tipX} ${tipY} L ${tailBase2.x} ${tailBase2.y} `;
+  const b2 = { x: cx + rx * Math.cos(startTh), y: cy + ry * Math.sin(startTh) };
+  const b1 = pts[steps]; // at tipAngle - halfSpan
 
-  return d;
+  let d = `M ${b2.x.toFixed(1)} ${b2.y.toFixed(1)} `;
+  for (let i = 0; i < steps; i++) {
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const midTh = (p1.th + p2.th) / 2;
+    const cpX = cx + (rx * 1.25) * Math.cos(midTh);
+    const cpY = cy + (ry * 1.25) * Math.sin(midTh);
+    d += qToC(p1.x, p1.y, cpX, cpY, p2.x, p2.y);
+  }
+
+  // Outgoing curve from b1 to tip
+  const ctrl1X = (b1.x + tipX) / 2 + Math.cos(tipAngle - Math.PI / 2) * 8;
+  const ctrl1Y = (b1.y + tipY) / 2 + Math.sin(tipAngle - Math.PI / 2) * 8;
+  d += qToC(b1.x, b1.y, ctrl1X, ctrl1Y, tipX, tipY);
+
+  // Incoming curve from tip back to b2
+  const ctrl2X = (b2.x + tipX) / 2 - Math.cos(tipAngle - Math.PI / 2) * 8;
+  const ctrl2Y = (b2.y + tipY) / 2 - Math.sin(tipAngle - Math.PI / 2) * 8;
+  d += qToC(tipX, tipY, ctrl2X, ctrl2Y, b2.x, b2.y);
+
+  return d + 'Z';
 }
 
 function getCachedDrawable(a) {
@@ -840,45 +907,59 @@ function renderText(a) {
   ctx.restore();
 }
 
-// ① Step Badge with Aimable Pointer Teardrop Tip!
+// ① Step Badge with Sleek Mathematical Tangent Teardrop Pin
 function renderStepBadge(a) {
   ctx.save();
   ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
   ctx.shadowBlur = 8;
   ctx.shadowOffsetY = 2;
 
-  const tipX = a.tipX !== undefined ? a.tipX : a.x;
-  const tipY = a.tipY !== undefined ? a.tipY : (a.y + 32);
-
-  // Angle from center to tip
-  const angle = Math.atan2(tipY - a.y, tipX - a.x);
   const r = a.radius || 17;
+  const tipX = a.tipX !== undefined ? a.tipX : a.x;
+  const tipY = a.tipY !== undefined ? a.tipY : (a.y + 24);
+  const rTip = 2.5;
 
-  // Tangent wings on circle
-  const wingAngle = 0.65;
-  const w1x = a.x + Math.cos(angle - wingAngle) * r;
-  const w1y = a.y + Math.sin(angle - wingAngle) * r;
-  const w2x = a.x + Math.cos(angle + wingAngle) * r;
-  const w2y = a.y + Math.sin(angle + wingAngle) * r;
+  const dx = tipX - a.x;
+  const dy = tipY - a.y;
+  const d = Math.hypot(dx, dy);
+  const theta = Math.atan2(dy, dx);
 
-  // Draw integrated teardrop shape
   ctx.beginPath();
-  ctx.arc(a.x, a.y, r, angle + wingAngle, angle - wingAngle, false);
-  ctx.lineTo(tipX, tipY);
-  ctx.closePath();
+  if (d <= r + 3) {
+    // Clean circle if tip is inside or tucked in
+    ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
+  } else {
+    // Mathematical tangent teardrop pin (Zero kinks, 100% C1 continuous!)
+    const val = Math.max(-1.0, Math.min(1.0, (r - rTip) / d));
+    const alpha = Math.acos(val);
+
+    const b1x = tipX + rTip * Math.cos(theta - alpha);
+    const b1y = tipY + rTip * Math.sin(theta - alpha);
+    const b2x = tipX + rTip * Math.cos(theta + alpha);
+    const b2y = tipY + rTip * Math.sin(theta + alpha);
+
+    const a2x = a.x + r * Math.cos(theta + alpha);
+    const a2y = a.y + r * Math.sin(theta + alpha);
+
+    ctx.arc(a.x, a.y, r, theta + alpha, theta - alpha, false);
+    ctx.lineTo(b1x, b1y);
+    ctx.arc(tipX, tipY, rTip, theta - alpha, theta + alpha, false);
+    ctx.lineTo(a2x, a2y);
+    ctx.closePath();
+  }
 
   ctx.fillStyle = a.color;
   ctx.fill();
 
-  // Crisp white outline
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = '#ffffff';
+  // Crisp inner ring highlight for contrast against any background
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
   ctx.stroke();
 
-  // Number text in center
-  ctx.shadowColor = 'transparent';
-  ctx.font = 'bold 16px -apple-system, sans-serif';
+  // Bold centered step number
   ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`${a.number}`, a.x, a.y + 0.5);
@@ -1127,15 +1208,20 @@ function findAnnotationAt(pos) {
       if (Math.hypot(pos.x - a.x, pos.y - a.y) < a.radius + 6) return a;
       if (Math.hypot(pos.x - a.tipX, pos.y - a.tipY) < 18) return a;
     } else if (a.type === 'text') {
-      // Precision full bounding box hit test!
+      // Precision full bounding box hit test across all lines
       const lines = a.text.split('\n');
       const fontSize = a.fontSize || 32;
-      let maxLen = 0;
-      lines.forEach(l => { if (l.length > maxLen) maxLen = l.length; });
-      const w = Math.max(50, maxLen * fontSize * 0.6);
-      const h = Math.max(30, lines.length * fontSize * 1.25);
-      if (pos.x >= a.x - 8 && pos.x <= a.x + w + 8 &&
-          pos.y >= a.y - 8 && pos.y <= a.y + h + 8) {
+      ctx.save();
+      ctx.font = `bold ${fontSize}px 'Noteworthy', -apple-system, sans-serif`;
+      let maxWidth = 0;
+      lines.forEach(l => {
+        const w = ctx.measureText(l).width;
+        if (w > maxWidth) maxWidth = w;
+      });
+      ctx.restore();
+      const totalH = Math.max(30, lines.length * fontSize * 1.25);
+      if (pos.x >= a.x - 8 && pos.x <= a.x + maxWidth + 12 &&
+          pos.y >= a.y - 8 && pos.y <= a.y + totalH + 8) {
         return a;
       }
     } else if (a.type === 'oval') {
@@ -1159,6 +1245,13 @@ function findAnnotationAt(pos) {
 let activeTextPos = null;
 let editingAnnotation = null;
 
+function autoResizeTextEditor() {
+  textEditor.style.width = 'auto';
+  textEditor.style.height = 'auto';
+  textEditor.style.width = `${Math.max(140, textEditor.scrollWidth + 16)}px`;
+  textEditor.style.height = `${Math.max(44, textEditor.scrollHeight + 6)}px`;
+}
+
 function spawnTextInput(x, y) {
   if (textEditor.style.display === 'block') {
     finalizeText();
@@ -1172,6 +1265,8 @@ function spawnTextInput(x, y) {
   textEditor.style.top = `${y * scale}px`;
   textEditor.style.fontSize = `${32 * scale}px`;
   textEditor.style.color = activeColor;
+  textEditor.style.width = '140px';
+  textEditor.style.height = '44px';
   textEditor.style.display = 'block';
   textEditor.value = '';
   setTimeout(() => textEditor.focus(), 10);
@@ -1189,6 +1284,7 @@ function editExistingText(anno) {
   textEditor.style.color = anno.color;
   textEditor.style.display = 'block';
   textEditor.value = anno.text;
+  autoResizeTextEditor();
   setTimeout(() => textEditor.focus(), 10);
 }
 
@@ -1335,5 +1431,24 @@ function handleKeyDown(e) {
       selectedAnnotation = null;
       redraw();
     }
+  } else if (selectedAnnotation && selectedAnnotation.type === 'step' && /^[0-9]$/.test(e.key)) {
+    saveHistoryState();
+    const cur = String(selectedAnnotation.number || '');
+    if (selectedAnnotation._justTyped) {
+      selectedAnnotation.number = parseInt(cur + e.key, 10) || parseInt(e.key, 10);
+      selectedAnnotation._justTyped = false;
+    } else {
+      selectedAnnotation.number = parseInt(e.key, 10);
+      selectedAnnotation._justTyped = true;
+    }
+    redraw();
+  } else if (selectedAnnotation && selectedAnnotation.type === 'step' && (e.key === '+' || e.key === '=')) {
+    saveHistoryState();
+    selectedAnnotation.number = (Number(selectedAnnotation.number) || 0) + 1;
+    redraw();
+  } else if (selectedAnnotation && selectedAnnotation.type === 'step' && (e.key === '-' || e.key === '_')) {
+    saveHistoryState();
+    selectedAnnotation.number = Math.max(1, (Number(selectedAnnotation.number) || 1) - 1);
+    redraw();
   }
 }
