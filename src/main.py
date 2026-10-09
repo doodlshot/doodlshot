@@ -10,6 +10,8 @@ import json
 import subprocess
 import tempfile
 import datetime
+import threading
+import time
 from pathlib import Path
 
 import gi
@@ -91,6 +93,14 @@ class DoodlshotApp:
         self.web_view = web
         self.win.set_child(web)
         self.win.present()
+
+    def _on_stitch_finished(self, payload):
+        if self.win:
+            self.win.set_visible(True)
+            self.win.present()
+        if hasattr(self, "web_view") and self.web_view:
+            js = f"window.onStitchResult && window.onStitchResult({json.dumps(payload)});"
+            self.web_view.evaluate_javascript(js, -1, None, None, None, None, None)
 
     def on_js_message(self, ucm, js_result):
         try:
@@ -207,6 +217,73 @@ class DoodlshotApp:
                 url = str(data).strip()
                 if url.startswith("http://") or url.startswith("https://"):
                     subprocess.run(["xdg-open", url])
+
+            elif action == "capture_stitch":
+                # Asynchronously capture a second screenshot and send it to frontend for stitching
+                options = data if isinstance(data, dict) else {}
+                direction = options.get("direction", "vertical")
+                gap = options.get("gap", 0)
+                align = options.get("align", "center")
+
+                # Hide main window so it is not visible in the screen capture
+                if self.win:
+                    self.win.set_visible(False)
+
+                def run_capture_worker():
+                    time.sleep(0.2)  # Allow Wayland compositor to finish unmapping window surface
+                    tmp_path = tempfile.mktemp(suffix=".png", prefix="doodlshot_stitch_")
+                    try:
+                        slurp_proc = subprocess.run(["slurp"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        if slurp_proc.returncode == 0 and slurp_proc.stdout.strip():
+                            region = slurp_proc.stdout.strip()
+                            subprocess.run(["grim", "-g", region, tmp_path], check=True)
+                            with open(tmp_path, "rb") as f:
+                                b64 = base64.b64encode(f.read()).decode("utf-8")
+                            payload = {
+                                "status": "ok",
+                                "dataUri": f"data:image/png;base64,{b64}",
+                                "direction": direction,
+                                "gap": gap,
+                                "align": align
+                            }
+                        else:
+                            payload = {"status": "cancelled"}
+                    except Exception as err:
+                        print(f"Stitch capture failed: {err}", file=sys.stderr)
+                        payload = {"status": "error", "message": str(err)}
+                    finally:
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
+
+                    GLib.idle_add(self._on_stitch_finished, payload)
+
+                threading.Thread(target=run_capture_worker, daemon=True).start()
+
+            elif action == "paste_stitch":
+                options = data if isinstance(data, dict) else {}
+                direction = options.get("direction", "vertical")
+                gap = options.get("gap", 0)
+                align = options.get("align", "center")
+
+                try:
+                    proc = subprocess.run(["wl-paste", "--type", "image/png"], capture_output=True)
+                    if proc.returncode == 0 and proc.stdout:
+                        b64 = base64.b64encode(proc.stdout).decode("utf-8")
+                        payload = {
+                            "status": "ok",
+                            "dataUri": f"data:image/png;base64,{b64}",
+                            "direction": direction,
+                            "gap": gap,
+                            "align": align
+                        }
+                    else:
+                        payload = {"status": "error", "message": "No image in clipboard"}
+                except Exception as err:
+                    payload = {"status": "error", "message": str(err)}
+
+                if hasattr(self, "web_view") and self.web_view:
+                    js = f"window.onStitchResult && window.onStitchResult({json.dumps(payload)});"
+                    self.web_view.evaluate_javascript(js, -1, None, None, None, None, None)
 
             elif action == "save" and data:
                 if "," in data:

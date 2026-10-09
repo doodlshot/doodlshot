@@ -101,6 +101,14 @@
             <line x1="12" y1="9" x2="12" y2="16"/>
           </svg>
         </button>
+        <button class="tool-btn" id="btn-stitch-toggle" title="Add Capture / Stitch Screenshots (Shift+S)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="8" height="16" rx="2"/>
+            <rect x="14" y="4" width="8" height="16" rx="2"/>
+            <line x1="18" y1="9" x2="18" y2="15"/>
+            <line x1="15" y1="12" x2="21" y2="12"/>
+          </svg>
+        </button>
       </div>
 
       <!-- Rich Pastel Palette -->
@@ -230,6 +238,76 @@
             <button class="pill-btn" data-type="outer" data-val="24">24</button>
             <input type="range" id="slider-outer-radius" min="0" max="36" value="16" class="studio-slider">
             <span class="val-badge" id="val-outer-radius">16px</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stitch / Add Capture Popover Panel -->
+    <div id="stitch-panel" class="stitch-panel-collapsed">
+      <div class="stitch-header">
+        <div class="stitch-header-left">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <rect x="2" y="4" width="8" height="16" rx="2"/>
+            <rect x="14" y="4" width="8" height="16" rx="2"/>
+            <line x1="18" y1="9" x2="18" y2="15"/>
+            <line x1="15" y1="12" x2="21" y2="12"/>
+          </svg>
+          <span class="stitch-header-title">Stitch / Add Capture</span>
+        </div>
+        <button id="stitch-close-btn" class="stitch-close-btn" title="Close">✕</button>
+      </div>
+
+      <div class="stitch-body">
+        <div class="stitch-row">
+          <span class="stitch-label">Direction</span>
+          <div class="stitch-segmented" id="stitch-dir-group">
+            <button class="stitch-seg-btn active" data-dir="vertical" title="Stack Below (Vertical)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+              <span>Below</span>
+            </button>
+            <button class="stitch-seg-btn" data-dir="horizontal" title="Side-by-Side (Horizontal)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              <span>Side-by-Side</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="stitch-row">
+          <span class="stitch-label">Spacing</span>
+          <div class="stitch-segmented" id="stitch-gap-group">
+            <button class="stitch-seg-btn active" data-gap="0">Flush (0px)</button>
+            <button class="stitch-seg-btn" data-gap="16">16px</button>
+            <button class="stitch-seg-btn" data-gap="32">32px</button>
+          </div>
+        </div>
+
+        <div class="stitch-row">
+          <span class="stitch-label">Alignment</span>
+          <div class="stitch-segmented" id="stitch-align-group">
+            <button class="stitch-seg-btn active" data-align="center">Center</button>
+            <button class="stitch-seg-btn" data-align="start">Start / Flush</button>
+          </div>
+        </div>
+
+        <div class="stitch-actions-group">
+          <button class="stitch-primary-btn" id="btn-stitch-capture">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            <span>Capture & Attach (Shift+S)</span>
+          </button>
+          <div class="stitch-sub-buttons">
+            <button class="stitch-sub-btn" id="btn-stitch-clipboard" title="Attach image currently in clipboard">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+              <span>From Clipboard</span>
+            </button>
+            <button class="stitch-sub-btn" id="btn-stitch-file" title="Load and attach an image file from disk">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <span>From File...</span>
+            </button>
+            <input type="file" id="stitch-file-input" accept="image/*" style="display: none;">
           </div>
         </div>
       </div>

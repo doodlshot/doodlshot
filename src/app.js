@@ -57,6 +57,12 @@ function getBackdropPad() {
   return activeBackdrop !== 'none' ? backdropPadding : 0;
 }
 
+// Stitch / Add Capture State
+let isStitchPanelOpen = false;
+let stitchDirection = 'vertical'; // 'vertical' (below) or 'horizontal' (side-by-side)
+let stitchGap = 0;               // 0, 16, 32
+let stitchAlign = 'center';       // 'center' or 'start'
+
 function toggleBackdropPanel(forceOpen = null) {
   const panel = document.getElementById('backdrop-panel');
   const btn = document.getElementById('btn-backdrop-toggle');
@@ -69,6 +75,7 @@ function toggleBackdropPanel(forceOpen = null) {
   }
 
   if (isBackdropPanelOpen) {
+    toggleStitchPanel(false);
     panel.classList.remove('backdrop-panel-collapsed');
     if (btn) btn.classList.add('active');
     if (activeBackdrop === 'none') {
@@ -80,6 +87,27 @@ function toggleBackdropPanel(forceOpen = null) {
       if (activeBackdrop !== 'none') btn.classList.add('active');
       else btn.classList.remove('active');
     }
+  }
+}
+
+function toggleStitchPanel(forceOpen = null) {
+  const panel = document.getElementById('stitch-panel');
+  const btn = document.getElementById('btn-stitch-toggle');
+  if (!panel) return;
+
+  if (forceOpen !== null) {
+    isStitchPanelOpen = forceOpen;
+  } else {
+    isStitchPanelOpen = !isStitchPanelOpen;
+  }
+
+  if (isStitchPanelOpen) {
+    toggleBackdropPanel(false);
+    panel.classList.remove('stitch-panel-collapsed');
+    if (btn) btn.classList.add('active');
+  } else {
+    panel.classList.add('stitch-panel-collapsed');
+    if (btn) btn.classList.remove('active');
   }
 }
 
@@ -181,6 +209,93 @@ function initUI() {
     });
   }
 
+  // Stitch / Add Capture listeners
+  const stitchToggleBtn = document.getElementById('btn-stitch-toggle');
+  if (stitchToggleBtn) {
+    stitchToggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleStitchPanel();
+    });
+  }
+
+  const stitchCloseBtn = document.getElementById('stitch-close-btn');
+  if (stitchCloseBtn) {
+    stitchCloseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleStitchPanel(false);
+    });
+  }
+
+  // Direction segmented buttons
+  document.querySelectorAll('#stitch-dir-group .stitch-seg-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('#stitch-dir-group .stitch-seg-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      stitchDirection = btn.dataset.dir || 'vertical';
+    });
+  });
+
+  // Gap segmented buttons
+  document.querySelectorAll('#stitch-gap-group .stitch-seg-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('#stitch-gap-group .stitch-seg-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      stitchGap = parseInt(btn.dataset.gap, 10) || 0;
+    });
+  });
+
+  // Align segmented buttons
+  document.querySelectorAll('#stitch-align-group .stitch-seg-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('#stitch-align-group .stitch-seg-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      stitchAlign = btn.dataset.align || 'center';
+    });
+  });
+
+  // Capture & Attach button
+  const triggerCaptureBtn = document.getElementById('btn-stitch-capture');
+  if (triggerCaptureBtn) {
+    triggerCaptureBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      triggerStitchCapture();
+    });
+  }
+
+  // Clipboard attach button
+  const stitchClipboardBtn = document.getElementById('btn-stitch-clipboard');
+  if (stitchClipboardBtn) {
+    stitchClipboardBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      triggerStitchClipboard();
+    });
+  }
+
+  // File attach button
+  const stitchFileBtn = document.getElementById('btn-stitch-file');
+  const stitchFileInput = document.getElementById('stitch-file-input');
+  if (stitchFileBtn && stitchFileInput) {
+    stitchFileBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      stitchFileInput.click();
+    });
+    stitchFileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) {
+        toggleStitchPanel(false);
+        const reader = new FileReader();
+        reader.onload = (re) => {
+          applyStitch(re.target.result, stitchDirection, stitchGap, stitchAlign);
+        };
+        reader.readAsDataURL(file);
+        stitchFileInput.value = '';
+      }
+    });
+  }
+
   document.querySelectorAll('.bd-swatch').forEach(sw => {
     sw.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -262,8 +377,10 @@ function initUI() {
     }
   });
 
-  // Deselect when clicking outside the canvas
+  // Deselect when clicking outside the canvas, and close popovers
   document.getElementById('canvas-viewport').addEventListener('mousedown', (e) => {
+    if (isStitchPanelOpen) toggleStitchPanel(false);
+    if (isBackdropPanelOpen) toggleBackdropPanel(false);
     if (e.target.id === 'canvas-viewport') {
       if (textEditor.style.display === 'block') {
         finalizeText();
@@ -2466,11 +2583,16 @@ function finalizeText() {
 // ----------------------------------------------------
 
 function getHistorySnapshot() {
-  return annotations.map(a => {
-    const copy = Object.assign({}, a);
-    copy.drawable = null;
-    return copy;
-  });
+  return {
+    annotations: annotations.map(a => {
+      const copy = Object.assign({}, a);
+      copy.drawable = null;
+      return copy;
+    }),
+    imageSrc: baseImage ? baseImage.src : null,
+    imageWidth: imageWidth,
+    imageHeight: imageHeight
+  };
 }
 
 function saveHistoryState() {
@@ -2480,10 +2602,32 @@ function saveHistoryState() {
 
 function undo() {
   if (history.length > 0) {
-    annotations = history.pop();
-    selectedAnnotation = null;
-    cachedBlurComposite = null;
-    redraw();
+    const state = history.pop();
+    if (Array.isArray(state)) {
+      annotations = state;
+      selectedAnnotation = null;
+      cachedBlurComposite = null;
+      redraw();
+    } else if (state && state.annotations) {
+      annotations = state.annotations;
+      selectedAnnotation = null;
+      cachedBlurComposite = null;
+      if (state.imageSrc && baseImage && state.imageSrc !== baseImage.src) {
+        baseImage = new Image();
+        baseImage.onload = () => {
+          imageWidth = state.imageWidth;
+          imageHeight = state.imageHeight;
+          cachedBaseBlur = null;
+          cachedBaseBlurRadius = 0;
+          cachedBlurComposite = null;
+          resizeCanvasForBackdrop();
+          redraw();
+        };
+        baseImage.src = state.imageSrc;
+        return;
+      }
+      redraw();
+    }
   }
 }
 
@@ -2617,6 +2761,164 @@ function hideOcrCard() {
 }
 
 // ----------------------------------------------------
+// Stitch / Add Capture Engine
+// ----------------------------------------------------
+
+function triggerStitchCapture() {
+  toggleStitchPanel(false);
+  showToast('📸 Select screen region to stitch...', 4000);
+  sendToBackend('capture_stitch', {
+    direction: stitchDirection,
+    gap: stitchGap,
+    align: stitchAlign
+  });
+}
+
+function triggerStitchClipboard() {
+  toggleStitchPanel(false);
+  showToast('📋 Reading clipboard image...', 2000);
+  sendToBackend('paste_stitch', {
+    direction: stitchDirection,
+    gap: stitchGap,
+    align: stitchAlign
+  });
+}
+
+window.onStitchResult = function(res) {
+  if (!res) return;
+  if (res.status === 'ok' && res.dataUri) {
+    applyStitch(res.dataUri, res.direction || stitchDirection, res.gap !== undefined ? res.gap : stitchGap, res.align || stitchAlign);
+  } else if (res.status === 'cancelled') {
+    showToast('Capture cancelled', 1800);
+  } else if (res.status === 'error') {
+    showToast(res.message || 'Stitch failed', 2500);
+  }
+};
+
+function shiftAnnotation(a, dx, dy) {
+  if (!a || (dx === 0 && dy === 0)) return;
+
+  if (['rect', 'pixelate', 'blur', 'erase', 'spotlight', 'highlighter', 'crop'].includes(a.type)) {
+    a.x += dx;
+    a.y += dy;
+    a.drawable = null;
+  } else if (a.type === 'oval') {
+    a.cx += dx;
+    a.cy += dy;
+    a.drawable = null;
+  } else if (a.type === 'arrow') {
+    if (a.p0) { a.p0.x += dx; a.p0.y += dy; }
+    if (a.p1) { a.p1.x += dx; a.p1.y += dy; }
+    if (a.p2) { a.p2.x += dx; a.p2.y += dy; }
+    a.drawable = null;
+  } else if (a.type === 'pen') {
+    if (Array.isArray(a.points)) {
+      a.points.forEach(pt => { pt.x += dx; pt.y += dy; });
+    }
+    a.drawable = null;
+  } else if (a.type === 'ruler') {
+    a.startX += dx; a.startY += dy;
+    a.endX += dx; a.endY += dy;
+  } else if (['step', 'cloud'].includes(a.type)) {
+    a.x += dx;
+    a.y += dy;
+    if (a.tipX !== undefined) { a.tipX += dx; a.tipY += dy; }
+    a.drawable = null;
+  } else if (a.type === 'text') {
+    a.x += dx;
+    a.y += dy;
+  } else if (a.type === 'magnifier') {
+    a.cx += dx;
+    a.cy += dy;
+    a.sourceX += dx;
+    a.sourceY += dy;
+  }
+}
+
+function applyStitch(newImageUri, direction = 'vertical', gap = 0, align = 'center') {
+  if (!baseImage) return;
+
+  saveHistoryState();
+
+  const newImg = new Image();
+  newImg.onload = () => {
+    const w1 = imageWidth;
+    const h1 = imageHeight;
+    const w2 = newImg.naturalWidth || newImg.width;
+    const h2 = newImg.naturalHeight || newImg.height;
+
+    let combinedW, combinedH;
+    let x1 = 0, y1 = 0;
+    let x2 = 0, y2 = 0;
+
+    if (direction === 'vertical') {
+      combinedW = Math.max(w1, w2);
+      combinedH = h1 + gap + h2;
+
+      if (align === 'center') {
+        x1 = Math.round((combinedW - w1) / 2);
+        x2 = Math.round((combinedW - w2) / 2);
+      } else { // 'start' (flush left)
+        x1 = 0;
+        x2 = 0;
+      }
+      y1 = 0;
+      y2 = h1 + gap;
+
+      if (x1 > 0) {
+        annotations.forEach(a => shiftAnnotation(a, x1, 0));
+      }
+    } else { // 'horizontal' (side-by-side)
+      combinedW = w1 + gap + w2;
+      combinedH = Math.max(h1, h2);
+
+      x1 = 0;
+      x2 = w1 + gap;
+      if (align === 'center') {
+        y1 = Math.round((combinedH - h1) / 2);
+        y2 = Math.round((combinedH - h2) / 2);
+      } else { // 'start' (flush top)
+        y1 = 0;
+        y2 = 0;
+      }
+
+      if (y1 > 0) {
+        annotations.forEach(a => shiftAnnotation(a, 0, y1));
+      }
+    }
+
+    const offscreen = document.createElement('canvas');
+    offscreen.width = combinedW;
+    offscreen.height = combinedH;
+    const octx = offscreen.getContext('2d');
+
+    // Draw existing screenshot
+    octx.drawImage(baseImage, x1, y1);
+    // Draw newly attached screenshot
+    octx.drawImage(newImg, x2, y2);
+
+    baseImage = new Image();
+    baseImage.onload = () => {
+      imageWidth = combinedW;
+      imageHeight = combinedH;
+      cachedBaseBlur = null;
+      cachedBaseBlurRadius = 0;
+      cachedBlurComposite = null;
+      resizeCanvasForBackdrop();
+      redraw();
+      showToast(
+        direction === 'vertical'
+          ? `Stitched below: ${combinedW}×${combinedH}px`
+          : `Stitched side-by-side: ${combinedW}×${combinedH}px`,
+        3000
+      );
+    };
+    baseImage.src = offscreen.toDataURL('image/png');
+  };
+  newImg.src = newImageUri;
+}
+
+// ----------------------------------------------------
 // Keyboard Shortcuts
 // ----------------------------------------------------
 
@@ -2643,6 +2945,14 @@ function handleKeyDown(e) {
     e.preventDefault();
     saveToFile();
   } else if (e.key === 'Escape') {
+    if (isStitchPanelOpen) {
+      toggleStitchPanel(false);
+      return;
+    }
+    if (isBackdropPanelOpen) {
+      toggleBackdropPanel(false);
+      return;
+    }
     if (selectedAnnotation) {
       selectedAnnotation = null;
       activeHandle = null;
@@ -2678,8 +2988,13 @@ function handleKeyDown(e) {
     setTool('text');
   } else if (e.key.toLowerCase() === 'p') {
     setTool('pen');
-  } else if (e.key.toLowerCase() === 's') {
-    setTool('spotlight');
+  } else if (e.key.toLowerCase() === 's' && !e.ctrlKey) {
+    if (e.shiftKey) {
+      e.preventDefault();
+      triggerStitchCapture();
+    } else {
+      setTool('spotlight');
+    }
   } else if (e.key.toLowerCase() === 'x') {
     setTool('pixelate');
   } else if (e.key.toLowerCase() === 'b') {
