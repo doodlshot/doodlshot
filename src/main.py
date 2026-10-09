@@ -46,6 +46,17 @@ def capture_screenshot():
         return None
 
 
+def capture_fullscreen_screenshot():
+    """Captures the full display using grim on Wayland."""
+    tmp_path = tempfile.mktemp(suffix=".png", prefix="doodlshot_")
+    try:
+        subprocess.run(["grim", tmp_path], check=True)
+        return tmp_path
+    except Exception as e:
+        print(f"Fullscreen capture failed: {e}", file=sys.stderr)
+        return None
+
+
 class DoodlshotApp:
     def __init__(self, image_path=None, image_data=None):
         self.image_path = image_path
@@ -345,6 +356,8 @@ def main():
             image_path = arg
         elif arg == "--capture":
             image_path = capture_screenshot()
+        elif arg in ["--fullscreen", "-F"]:
+            image_path = capture_fullscreen_screenshot()
     else:
         # If no arguments provided, test or capture
         # If running from a terminal without args, capture region
