@@ -961,12 +961,14 @@ function redraw(includeHandles = true) {
   if (currentAnnotation && isDrawing) {
     if (currentAnnotation.type === 'blur') {
       ctx.save();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
-      ctx.fillRect(currentAnnotation.x, currentAnnotation.y, currentAnnotation.w, currentAnnotation.h);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+      ctx.beginPath();
+      ctx.roundRect(currentAnnotation.x, currentAnnotation.y, currentAnnotation.w, currentAnnotation.h, 6);
+      ctx.fill();
       ctx.strokeStyle = '#4dabf7';
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 4]);
-      ctx.strokeRect(currentAnnotation.x, currentAnnotation.y, currentAnnotation.w, currentAnnotation.h);
+      ctx.stroke();
       ctx.restore();
     } else if (['pixelate', 'erase'].includes(currentAnnotation.type)) {
       renderRedaction(currentAnnotation);
@@ -1530,14 +1532,22 @@ function gaussianBlurImageData(imgData, radius) {
 
 function bakeBlur(a) {
   if (!baseImage) return null;
-  const sx = Math.max(0, Math.floor(a.x));
-  const sy = Math.max(0, Math.floor(a.y));
-  const sw = Math.min(imageWidth - sx, Math.floor(a.w));
-  const sh = Math.min(imageHeight - sy, Math.floor(a.h));
-  if (sw < 4 || sh < 4) return null;
+  const rawX = Math.floor(a.x);
+  const rawY = Math.floor(a.y);
+  const rawW = Math.floor(a.w);
+  const rawH = Math.floor(a.h);
+  if (rawW < 4 || rawH < 4) return null;
+
+  // Adaptive soft feather radius to prevent harsh cutoff edges
+  const feather = Math.max(4, Math.min(10, Math.min(rawW, rawH) * 0.22));
+  const fRound = Math.round(feather);
+  const sx = Math.max(0, rawX - fRound);
+  const sy = Math.max(0, rawY - fRound);
+  const sw = Math.min(imageWidth - sx, rawW + fRound * 2);
+  const sh = Math.min(imageHeight - sy, rawH + fRound * 2);
 
   // Seamless boundary margin so diffusion naturally samples surrounding context
-  const margin = 16;
+  const margin = 20;
   const x0 = Math.max(0, sx - margin);
   const y0 = Math.max(0, sy - margin);
   const x1 = Math.min(imageWidth, sx + sw + margin);
@@ -1557,11 +1567,40 @@ function bakeBlur(a) {
     gaussianBlurImageData(imgData, 12);
     sctx.putImageData(imgData, 0, 0);
 
+    // Build soft feathered mask to eliminate sharp rectangular cut-offs
+    const mask = document.createElement('canvas');
+    mask.width = sw;
+    mask.height = sh;
+    const mctx = mask.getContext('2d');
+
+    const offsetX = rawX - sx;
+    const offsetY = rawY - sy;
+    mctx.fillStyle = '#ffffff';
+    mctx.beginPath();
+    mctx.roundRect(offsetX, offsetY, rawW, rawH, Math.min(6, feather));
+    mctx.fill();
+
+    // Blur mask for smooth 2D Gaussian alpha falloff
+    const maskData = mctx.getImageData(0, 0, sw, sh);
+    gaussianBlurImageData(maskData, Math.max(2, Math.round(feather * 0.75)));
+    const mpx = maskData.data;
+    for (let i = 0; i < mpx.length; i += 4) {
+      mpx[i + 3] = mpx[i]; // Luminance becomes alpha
+      mpx[i] = 255;
+      mpx[i + 1] = 255;
+      mpx[i + 2] = 255;
+    }
+    mctx.putImageData(maskData, 0, 0);
+
+    // Composite blurred patch with feathered alpha mask
     const off = document.createElement('canvas');
     off.width = sw;
     off.height = sh;
     const octx = off.getContext('2d');
     octx.drawImage(tempSource, sx - x0, sy - y0, sw, sh, 0, 0, sw, sh);
+    octx.globalCompositeOperation = 'destination-in';
+    octx.drawImage(mask, 0, 0);
+
     return { off, sx, sy, sw, sh };
   } catch (err) {
     console.error("Gaussian blur bake error:", err);
@@ -1673,7 +1712,13 @@ function renderBoxSelection(a) {
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = '#4dabf7';
   ctx.setLineDash([4, 4]);
-  ctx.strokeRect(a.x, a.y, a.w, a.h);
+  if (a.type === 'blur') {
+    ctx.beginPath();
+    ctx.roundRect(a.x, a.y, a.w, a.h, 6);
+    ctx.stroke();
+  } else {
+    ctx.strokeRect(a.x, a.y, a.w, a.h);
+  }
   ctx.restore();
 }
 
