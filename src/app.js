@@ -33,6 +33,9 @@ let pointerDownPos = null;
 let currentAnnotation = null;
 let selectedAnnotation = null;
 let activeHandle = null; // 'p0', 'p1', 'p2', 'tip'
+let preMoveSnapshot = null;
+let currentOcrText = '';
+let ocrCardTimer = null;
 
 // Double click tracker
 let lastClickTime = 0;
@@ -149,7 +152,8 @@ const toolLabels = {
   pixelate: 'Pixelate Mosaic',
   blur: 'Frosted Blur',
   erase: 'Smart Erase',
-  crop: 'Crop Canvas'
+  crop: 'Crop Canvas',
+  ocr: 'Text OCR & QR Reader (Q)'
 };
 
 // Initialize
@@ -160,7 +164,7 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 function initUI() {
-  const tools = ['select', 'arrow', 'ruler', 'oval', 'rect', 'cloud', 'step', 'highlighter', 'magnifier', 'pen', 'text', 'spotlight', 'pixelate', 'blur', 'erase', 'crop'];
+  const tools = ['select', 'arrow', 'ruler', 'oval', 'rect', 'cloud', 'step', 'highlighter', 'magnifier', 'pen', 'text', 'spotlight', 'pixelate', 'blur', 'erase', 'crop', 'ocr'];
   tools.forEach(t => {
     const btn = document.getElementById(`tool-${t}`);
     if (btn) {
@@ -286,6 +290,29 @@ function initUI() {
       const hex = hexLabel ? hexLabel.textContent : '#FFFFFF';
       sendToBackend('copy_text', hex);
       showToast(`Copied ${hex} to clipboard!`);
+    });
+  }
+
+  // OCR Card event listeners
+  const ocrClose = document.getElementById('ocr-close-btn');
+  if (ocrClose) ocrClose.addEventListener('click', hideOcrCard);
+
+  const ocrCopy = document.getElementById('ocr-action-primary');
+  if (ocrCopy) {
+    ocrCopy.addEventListener('click', () => {
+      if (currentOcrText) {
+        sendToBackend('copy_text', currentOcrText);
+        showToast('Copied to clipboard!');
+      }
+    });
+  }
+
+  const ocrOpen = document.getElementById('ocr-action-open');
+  if (ocrOpen) {
+    ocrOpen.addEventListener('click', () => {
+      if (currentOcrText) {
+        sendToBackend('open_url', currentOcrText);
+      }
     });
   }
 
@@ -586,6 +613,7 @@ function onPointerDown(e) {
       const handle = hitTestArrowHandles(selectedAnnotation, pos);
       if (handle) {
         activeHandle = handle;
+        preMoveSnapshot = getHistorySnapshot();
         isDrawing = true;
         return;
       }
@@ -593,6 +621,7 @@ function onPointerDown(e) {
       if (selectedAnnotation.tipX !== undefined) {
         if (Math.hypot(pos.x - selectedAnnotation.tipX, pos.y - selectedAnnotation.tipY) < 18) {
           activeHandle = 'tip';
+          preMoveSnapshot = getHistorySnapshot();
           isDrawing = true;
           return;
         }
@@ -605,6 +634,7 @@ function onPointerDown(e) {
     const hit = findAnnotationAt(pos);
     selectedAnnotation = hit;
     if (selectedAnnotation) {
+      preMoveSnapshot = getHistorySnapshot();
       if (selectedAnnotation.type === 'arrow') {
         const handle = hitTestArrowHandles(selectedAnnotation, pos);
         if (handle) {
@@ -654,7 +684,6 @@ function onPointerDown(e) {
   }
 
   isDrawing = true;
-  saveHistoryState();
   const randSeed = Math.floor(Math.random() * 65536) + 1;
 
   if (activeTool === 'arrow') {
@@ -792,6 +821,16 @@ function onPointerDown(e) {
       color: activeColor,
       width: activeWidth
     };
+  } else if (activeTool === 'ocr') {
+    currentAnnotation = {
+      type: 'ocr',
+      startX: pos.x,
+      startY: pos.y,
+      x: pos.x,
+      y: pos.y,
+      w: 0,
+      h: 0
+    };
   }
 }
 
@@ -880,7 +919,7 @@ function onPointerMove(e) {
     currentAnnotation.rx = Math.abs(pos.x - currentAnnotation.startX) / 2;
     currentAnnotation.ry = Math.abs(pos.y - currentAnnotation.startY) / 2;
     currentAnnotation.drawable = null;
-  } else if (['rect', 'highlighter', 'crop', 'spotlight'].includes(currentAnnotation.type)) {
+  } else if (['rect', 'highlighter', 'crop', 'spotlight', 'ocr'].includes(currentAnnotation.type)) {
     currentAnnotation.x = Math.min(currentAnnotation.startX, pos.x);
     currentAnnotation.y = Math.min(currentAnnotation.startY, pos.y);
     currentAnnotation.w = Math.abs(pos.x - currentAnnotation.startX);
@@ -941,9 +980,22 @@ function onPointerUp(e) {
   const clickDist = pointerDownPos ? Math.hypot(pos.x - pointerDownPos.x, pos.y - pointerDownPos.y) : 0;
 
   if (activeHandle) {
+    if (preMoveSnapshot && clickDist >= 6) {
+      history.push(preMoveSnapshot);
+      if (history.length > 30) history.shift();
+    }
+    preMoveSnapshot = null;
     activeHandle = null;
     redraw();
     return;
+  }
+
+  if (preMoveSnapshot) {
+    if (clickDist >= 6) {
+      history.push(preMoveSnapshot);
+      if (history.length > 30) history.shift();
+    }
+    preMoveSnapshot = null;
   }
 
   // Simple click deselects
@@ -953,14 +1005,26 @@ function onPointerUp(e) {
       selectedAnnotation = null;
       activeHandle = null;
       redraw();
-      return;
     }
+    return;
   }
 
   // Crop execution
   if (currentAnnotation && currentAnnotation.type === 'crop') {
     if (currentAnnotation.w > 20 && currentAnnotation.h > 20) {
       applyCrop(currentAnnotation.x, currentAnnotation.y, currentAnnotation.w, currentAnnotation.h);
+    }
+    currentAnnotation = null;
+    setTool('select');
+    return;
+  }
+
+  // OCR execution
+  if (currentAnnotation && currentAnnotation.type === 'ocr') {
+    if (currentAnnotation.w > 12 && currentAnnotation.h > 12) {
+      performOcrOnRegion(currentAnnotation.x, currentAnnotation.y, currentAnnotation.w, currentAnnotation.h);
+    } else {
+      showToast('Drag over any text or QR code to recognize', 2000);
     }
     currentAnnotation = null;
     setTool('select');
@@ -978,12 +1042,14 @@ function onPointerUp(e) {
         currentAnnotation.p1.x += perpX;
         currentAnnotation.p1.y += perpY;
         currentAnnotation.drawable = null;
+        saveHistoryState();
         annotations.push(currentAnnotation);
         selectedAnnotation = currentAnnotation;
       }
     } else if (currentAnnotation.type === 'ruler') {
       const dist = Math.hypot(currentAnnotation.endX - currentAnnotation.startX, currentAnnotation.endY - currentAnnotation.startY);
       if (dist > 5) {
+        saveHistoryState();
         annotations.push(currentAnnotation);
         selectedAnnotation = currentAnnotation;
       }
@@ -996,15 +1062,42 @@ function onPointerUp(e) {
         } else {
           currentAnnotation.baked = bakePixelate(currentAnnotation);
         }
+        saveHistoryState();
         annotations.push(currentAnnotation);
         selectedAnnotation = currentAnnotation;
       }
     } else if (currentAnnotation.type === 'spotlight') {
       if (currentAnnotation.w > 8 && currentAnnotation.h > 8) {
+        saveHistoryState();
         annotations.push(currentAnnotation);
         selectedAnnotation = currentAnnotation;
       }
-    } else {
+    } else if (currentAnnotation.type === 'pen') {
+      if (currentAnnotation.points && currentAnnotation.points.length > 1) {
+        saveHistoryState();
+        annotations.push(currentAnnotation);
+        selectedAnnotation = currentAnnotation;
+      }
+    } else if (['rect', 'highlighter'].includes(currentAnnotation.type)) {
+      if (currentAnnotation.w > 3 && currentAnnotation.h > 3) {
+        saveHistoryState();
+        annotations.push(currentAnnotation);
+        selectedAnnotation = currentAnnotation;
+      }
+    } else if (currentAnnotation.type === 'oval') {
+      if (currentAnnotation.rx > 3 && currentAnnotation.ry > 3) {
+        saveHistoryState();
+        annotations.push(currentAnnotation);
+        selectedAnnotation = currentAnnotation;
+      }
+    } else if (currentAnnotation.type === 'cloud') {
+      if (currentAnnotation.w > 8 && currentAnnotation.h > 8) {
+        saveHistoryState();
+        annotations.push(currentAnnotation);
+        selectedAnnotation = currentAnnotation;
+      }
+    } else if (currentAnnotation.type === 'magnifier') {
+      saveHistoryState();
       annotations.push(currentAnnotation);
       selectedAnnotation = currentAnnotation;
     }
@@ -1178,6 +1271,8 @@ function redraw(includeHandles = true) {
       renderMagnifier(currentAnnotation);
     } else if (currentAnnotation.type === 'crop') {
       renderCropOverlay(currentAnnotation);
+    } else if (currentAnnotation.type === 'ocr') {
+      renderOcrOverlay(currentAnnotation);
     } else {
       renderAnnotation(currentAnnotation);
     }
@@ -1769,6 +1864,62 @@ function applyCrop(x, y, w, h) {
   baseImage.src = offscreen.toDataURL('image/png');
 }
 
+// 🔍 Text OCR & QR Scanner Viewfinder Preview
+function renderOcrOverlay(a) {
+  ctx.save();
+  // Semi-transparent scan tint
+  ctx.fillStyle = 'rgba(14, 165, 233, 0.12)';
+  ctx.fillRect(a.x, a.y, a.w, a.h);
+
+  // Subtle dashed cyan boundary
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.strokeRect(a.x, a.y, a.w, a.h);
+  ctx.setLineDash([]);
+
+  // High-tech corner brackets
+  const clen = Math.min(14, Math.max(6, Math.min(a.w, a.h) / 3));
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = '#38bdf8';
+  ctx.beginPath();
+  // Top-left
+  ctx.moveTo(a.x, a.y + clen); ctx.lineTo(a.x, a.y); ctx.lineTo(a.x + clen, a.y);
+  // Top-right
+  ctx.moveTo(a.x + a.w - clen, a.y); ctx.lineTo(a.x + a.w, a.y); ctx.lineTo(a.x + a.w, a.y + clen);
+  // Bottom-left
+  ctx.moveTo(a.x, a.y + a.h - clen); ctx.lineTo(a.x, a.y + a.h); ctx.lineTo(a.x + clen, a.y + a.h);
+  // Bottom-right
+  ctx.moveTo(a.x + a.w - clen, a.y + a.h); ctx.lineTo(a.x + a.w, a.y + a.h); ctx.lineTo(a.x + a.w, a.y + a.h - clen);
+  ctx.stroke();
+
+  // Floating center badge
+  if (a.w > 70 && a.h > 35) {
+    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif';
+    const text = '🔍 Release to scan';
+    const tm = ctx.measureText(text);
+    const pw = tm.width + 16;
+    const ph = 22;
+    const cx = a.x + a.w / 2;
+    const cy = a.y + a.h / 2;
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+    ctx.beginPath();
+    ctx.roundRect(cx - pw / 2, cy - ph / 2, pw, ph, 11);
+    ctx.fill();
+
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, cx, cy);
+  }
+  ctx.restore();
+}
+
 // ⬛ 100% Persistent Pixelate, Frosted Blur & Smart Erase
 function bakePixelate(a) {
   if (!baseImage) return null;
@@ -2329,13 +2480,16 @@ function finalizeText() {
 // History / Undo
 // ----------------------------------------------------
 
-function saveHistoryState() {
-  const snapshot = annotations.map(a => {
+function getHistorySnapshot() {
+  return annotations.map(a => {
     const copy = Object.assign({}, a);
     copy.drawable = null;
     return copy;
   });
-  history.push(snapshot);
+}
+
+function saveHistoryState() {
+  history.push(getHistorySnapshot());
   if (history.length > 30) history.shift();
 }
 
@@ -2381,8 +2535,84 @@ function sendToBackend(action, data) {
       if (navigator.clipboard) {
         navigator.clipboard.writeText(data).catch(() => {});
       }
+    } else if (action === 'open_url' && data) {
+      window.open(data, '_blank');
     }
   }
+}
+
+// ----------------------------------------------------
+// Text OCR & QR Code Reader
+// ----------------------------------------------------
+
+function performOcrOnRegion(x, y, w, h) {
+  const offscreen = document.createElement('canvas');
+  offscreen.width = Math.max(1, Math.round(w));
+  offscreen.height = Math.max(1, Math.round(h));
+  const octx = offscreen.getContext('2d');
+
+  const pad = getBackdropPad();
+  octx.drawImage(canvas, x + pad, y + pad, w, h, 0, 0, w, h);
+
+  showToast('🔍 Scanning text & QR codes...', 4000);
+  const dataUrl = offscreen.toDataURL('image/png');
+  sendToBackend('ocr_scan', dataUrl);
+}
+
+function performOcrFullImage() {
+  showToast('🔍 Scanning full screenshot...', 5000);
+  const dataUrl = canvas.toDataURL('image/png');
+  sendToBackend('ocr_scan', dataUrl);
+}
+
+window.onOcrResult = function(res) {
+  if (!res) return;
+  if (res.type === 'qr') {
+    currentOcrText = res.text;
+    showToast(`QR Code Copied: ${res.text.slice(0, 40)}`, 3000);
+    displayOcrCard('QR Code', res.text, true);
+  } else if (res.type === 'text') {
+    currentOcrText = res.text;
+    const preview = res.text.replace(/\s+/g, ' ').slice(0, 36);
+    showToast(`Text Copied: "${preview}" (${res.text.length} chars)`, 3000);
+    displayOcrCard('Recognized Text', res.text, false);
+  } else {
+    showToast('No text or QR code detected', 2200);
+  }
+};
+
+function displayOcrCard(typeTitle, text, isQr) {
+  const card = document.getElementById('ocr-result-card');
+  const typeBadge = document.getElementById('ocr-type-badge');
+  const cardTitle = document.getElementById('ocr-card-title');
+  const cardBody = document.getElementById('ocr-card-content');
+  const openBtn = document.getElementById('ocr-action-open');
+  if (!card) return;
+
+  if (typeBadge) {
+    typeBadge.textContent = isQr ? 'QR Code' : 'Text OCR';
+    typeBadge.classList.toggle('is-qr', isQr);
+  }
+  if (cardTitle) {
+    cardTitle.textContent = 'Copied to Clipboard';
+  }
+  if (cardBody) {
+    cardBody.textContent = text;
+  }
+  if (openBtn) {
+    const isUrl = text.startsWith('http://') || text.startsWith('https://');
+    openBtn.style.display = isUrl ? 'inline-block' : 'none';
+  }
+
+  card.classList.remove('ocr-card-hidden');
+  if (ocrCardTimer) clearTimeout(ocrCardTimer);
+  ocrCardTimer = setTimeout(hideOcrCard, 8000);
+}
+
+function hideOcrCard() {
+  const card = document.getElementById('ocr-result-card');
+  if (card) card.classList.add('ocr-card-hidden');
+  if (ocrCardTimer) clearTimeout(ocrCardTimer);
 }
 
 // ----------------------------------------------------
@@ -2423,6 +2653,12 @@ function handleKeyDown(e) {
     setTool('arrow');
   } else if (e.key.toLowerCase() === 'd') {
     setTool('ruler');
+  } else if (e.key.toLowerCase() === 'q') {
+    if (e.shiftKey) {
+      performOcrFullImage();
+    } else {
+      setTool('ocr');
+    }
   } else if (e.key.toLowerCase() === 'o') {
     setTool('oval');
   } else if (e.key.toLowerCase() === 'r') {

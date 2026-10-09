@@ -88,6 +88,7 @@ class DoodlshotApp:
         base_uri = f"file://{html_file}"
         web.load_html(html_content, base_uri)
 
+        self.web_view = web
         self.win.set_child(web)
         self.win.present()
 
@@ -114,6 +115,62 @@ class DoodlshotApp:
                     subprocess.run(["wl-copy"], input=text.encode("utf-8"), check=True)
                 except Exception as ex:
                     print(f"wl-copy text error: {ex}", file=sys.stderr)
+
+            elif action == "ocr_scan" and data:
+                if "," in data:
+                    b64_data = data.split(",", 1)[1]
+                    png_bytes = base64.b64decode(b64_data)
+                    
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                        tmp.write(png_bytes)
+                        tmp_path = tmp.name
+
+                    try:
+                        # 1. First, check for QR code or Barcode with zbarimg
+                        zbar_res = subprocess.run(["zbarimg", "-q", "--raw", tmp_path], capture_output=True, text=True)
+                        qr_text = zbar_res.stdout.strip()
+
+                        if qr_text:
+                            # QR code or Barcode found!
+                            try:
+                                subprocess.run(["wl-copy"], input=qr_text.encode("utf-8"), check=True)
+                            except Exception as ex:
+                                print(f"wl-copy error: {ex}", file=sys.stderr)
+                            preview = qr_text if len(qr_text) <= 60 else qr_text[:57] + "..."
+                            subprocess.run(["notify-send", "-a", "Doodlshot", "QR Code Copied", preview])
+                            result_payload = {"type": "qr", "text": qr_text}
+                        else:
+                            # 2. Try Tesseract OCR
+                            tess_res = subprocess.run(["tesseract", tmp_path, "stdout", "-l", "eng", "--psm", "6"], capture_output=True, text=True)
+                            ocr_text = tess_res.stdout.strip()
+                            if not ocr_text:
+                                tess_res = subprocess.run(["tesseract", tmp_path, "stdout", "-l", "eng"], capture_output=True, text=True)
+                                ocr_text = tess_res.stdout.strip()
+
+                            if ocr_text:
+                                try:
+                                    subprocess.run(["wl-copy"], input=ocr_text.encode("utf-8"), check=True)
+                                except Exception as ex:
+                                    print(f"wl-copy error: {ex}", file=sys.stderr)
+                                preview = ocr_text if len(ocr_text) <= 60 else ocr_text[:57] + "..."
+                                subprocess.run(["notify-send", "-a", "Doodlshot", "Text OCR Copied", f"{preview} ({len(ocr_text)} chars)"])
+                                result_payload = {"type": "text", "text": ocr_text}
+                            else:
+                                result_payload = {"type": "empty", "text": ""}
+
+                        if hasattr(self, "web_view") and self.web_view:
+                            js_code = f"window.onOcrResult && window.onOcrResult({json.dumps(result_payload)});"
+                            self.web_view.evaluate_javascript(js_code, -1, None, None, None, None, None)
+                    except Exception as ex:
+                        print(f"OCR scan exception: {ex}", file=sys.stderr)
+                    finally:
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
+
+            elif action == "open_url" and data:
+                url = str(data).strip()
+                if url.startswith("http://") or url.startswith("https://"):
+                    subprocess.run(["xdg-open", url])
 
             elif action == "save" and data:
                 if "," in data:

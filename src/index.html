@@ -91,6 +91,16 @@
             <path d="M18 22V8a2 2 0 0 0-2-2H2"/>
           </svg>
         </button>
+        <button class="tool-btn" id="tool-ocr" title="Text OCR & QR Code Reader (Q)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 7V4h3"/>
+            <path d="M17 4h3v3"/>
+            <path d="M20 17v3h-3"/>
+            <path d="M7 20H4v-3"/>
+            <line x1="8" y1="9" x2="16" y2="9"/>
+            <line x1="12" y1="9" x2="12" y2="16"/>
+          </svg>
+        </button>
       </div>
 
       <!-- Rich Pastel Palette -->
@@ -240,6 +250,22 @@
 
   <!-- Toast Notification Overlay -->
   <div id="toast-notification" class="toast-hidden"></div>
+
+  <!-- Floating OCR & QR Result Card -->
+  <div id="ocr-result-card" class="ocr-card-hidden">
+    <div class="ocr-card-header">
+      <div class="ocr-card-title-group">
+        <span id="ocr-type-badge" class="ocr-badge-pill">OCR</span>
+        <span id="ocr-card-title">Copied to Clipboard</span>
+      </div>
+      <button id="ocr-close-btn" class="ocr-card-close" title="Dismiss">✕</button>
+    </div>
+    <div id="ocr-card-content" class="ocr-card-body"></div>
+    <div class="ocr-card-actions">
+      <button id="ocr-action-primary" class="ocr-btn-primary">Copy Again</button>
+      <button id="ocr-action-open" class="ocr-btn-secondary" style="display: none;">Open Link</button>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
