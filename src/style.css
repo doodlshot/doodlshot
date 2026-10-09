@@ -128,6 +128,14 @@ body {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
+.backdrop-preview {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  display: inline-block;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
 /* Colors palette */
 .color-swatch-wrap {
   display: flex;

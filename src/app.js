@@ -38,6 +38,9 @@ let activeHandle = null; // 'p0', 'p1', 'p2', 'tip'
 let lastClickTime = 0;
 let lastClickPos = null;
 
+// Studio Framing Backdrop State
+let activeBackdrop = 'none'; // 'none', 'sunset', 'ocean', 'obsidian', 'aurora'
+
 // Tool names for badge
 const toolLabels = {
   select: 'Select & Move',
@@ -50,7 +53,10 @@ const toolLabels = {
   magnifier: 'Magnifier Loupe',
   pen: 'Freehand Pen',
   text: 'Hand-drawn Text',
-  pixelate: 'Pixelate / Redact',
+  spotlight: 'Spotlight Focus',
+  pixelate: 'Pixelate Mosaic',
+  blur: 'Frosted Blur',
+  erase: 'Smart Erase',
   crop: 'Crop Canvas'
 };
 
@@ -62,12 +68,24 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 function initUI() {
-  const tools = ['select', 'arrow', 'oval', 'rect', 'cloud', 'step', 'highlighter', 'magnifier', 'pen', 'text', 'pixelate', 'crop'];
+  const tools = ['select', 'arrow', 'oval', 'rect', 'cloud', 'step', 'highlighter', 'magnifier', 'pen', 'text', 'spotlight', 'pixelate', 'blur', 'erase', 'crop'];
   tools.forEach(t => {
     const btn = document.getElementById(`tool-${t}`);
     if (btn) {
       btn.addEventListener('click', () => setTool(t));
     }
+  });
+
+  // Studio Framing Backdrop listeners
+  document.querySelectorAll('.backdrop-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('.backdrop-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeBackdrop = btn.dataset.backdrop || 'none';
+      resizeCanvasForBackdrop();
+      redraw();
+    });
   });
 
   // Color picker
@@ -168,14 +186,19 @@ function setTool(tool) {
   redraw();
 }
 
+function resizeCanvasForBackdrop() {
+  const pad = activeBackdrop !== 'none' ? 44 : 0;
+  canvas.width = imageWidth + pad * 2;
+  canvas.height = imageHeight + pad * 2;
+  badgeDims.textContent = `${imageWidth} × ${imageHeight}`;
+}
+
 function loadImage() {
   baseImage = new Image();
   baseImage.onload = () => {
     imageWidth = baseImage.naturalWidth || baseImage.width;
     imageHeight = baseImage.naturalHeight || baseImage.height;
-    canvas.width = imageWidth;
-    canvas.height = imageHeight;
-    badgeDims.textContent = `${imageWidth} × ${imageHeight}`;
+    resizeCanvasForBackdrop();
     redraw();
   };
 
@@ -218,9 +241,9 @@ function createMockScreenshot() {
   octx.fillText('Doodlshot Canvas Ready', 110, 190);
   octx.font = '16px -apple-system, sans-serif';
   octx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-  octx.fillText('• Step badges & clouds now have aimable callout pointers', 110, 230);
+  octx.fillText('• Spotlight focus, Studio framing backdrops, & Smart redaction', 110, 230);
   octx.fillText('• Double-click anywhere on text to edit it in place', 110, 260);
-  octx.fillText('• Bulletproof pixelation that never disappears on release', 110, 290);
+  octx.fillText('• Bulletproof pixelation, frosted blur, and smart erase', 110, 290);
   octx.fillText('• Clean solid line on magnifier loupe & rich pastel palette', 110, 320);
 
   baseImage.src = offscreen.toDataURL('image/png');
@@ -234,9 +257,12 @@ function getCanvasPos(e) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
+  const rawX = (e.clientX - rect.left) * scaleX;
+  const rawY = (e.clientY - rect.top) * scaleY;
+  const pad = activeBackdrop !== 'none' ? 44 : 0;
   return {
-    x: (e.clientX - rect.left) * scaleX,
-    y: (e.clientY - rect.top) * scaleY
+    x: rawX - pad,
+    y: rawY - pad
   };
 }
 
@@ -443,9 +469,20 @@ function onPointerDown(e) {
       seed: randSeed,
       drawable: null
     };
-  } else if (activeTool === 'pixelate') {
+  } else if (activeTool === 'spotlight') {
     currentAnnotation = {
-      type: 'pixelate',
+      type: 'spotlight',
+      startX: pos.x,
+      startY: pos.y,
+      x: pos.x,
+      y: pos.y,
+      w: 0,
+      h: 0,
+      radius: 12
+    };
+  } else if (['pixelate', 'blur', 'erase'].includes(activeTool)) {
+    currentAnnotation = {
+      type: activeTool,
       startX: pos.x,
       startY: pos.y,
       x: pos.x,
@@ -521,7 +558,7 @@ function onPointerMove(e) {
       if (selectedAnnotation.sourceX !== undefined) selectedAnnotation.sourceX += dx;
       if (selectedAnnotation.sourceY !== undefined) selectedAnnotation.sourceY += dy;
 
-      if (selectedAnnotation.type === 'pixelate') {
+      if (['pixelate', 'blur', 'erase'].includes(selectedAnnotation.type)) {
         selectedAnnotation.baked = null; // re-bake at new location
       }
     }
@@ -545,7 +582,7 @@ function onPointerMove(e) {
     currentAnnotation.rx = Math.abs(pos.x - currentAnnotation.startX) / 2;
     currentAnnotation.ry = Math.abs(pos.y - currentAnnotation.startY) / 2;
     currentAnnotation.drawable = null;
-  } else if (currentAnnotation.type === 'rect' || currentAnnotation.type === 'highlighter' || currentAnnotation.type === 'crop') {
+  } else if (['rect', 'highlighter', 'crop', 'spotlight'].includes(currentAnnotation.type)) {
     currentAnnotation.x = Math.min(currentAnnotation.startX, pos.x);
     currentAnnotation.y = Math.min(currentAnnotation.startY, pos.y);
     currentAnnotation.w = Math.abs(pos.x - currentAnnotation.startX);
@@ -563,7 +600,7 @@ function onPointerMove(e) {
     currentAnnotation.tipX = cx + rx * 0.75;
     currentAnnotation.tipY = cy + ry + Math.max(18, ry * 0.35);
     currentAnnotation.drawable = null;
-  } else if (currentAnnotation.type === 'pixelate') {
+  } else if (['pixelate', 'blur', 'erase'].includes(currentAnnotation.type)) {
     currentAnnotation.x = Math.min(currentAnnotation.startX, pos.x);
     currentAnnotation.y = Math.min(currentAnnotation.startY, pos.y);
     currentAnnotation.w = Math.abs(pos.x - currentAnnotation.startX);
@@ -631,9 +668,16 @@ function onPointerUp(e) {
         annotations.push(currentAnnotation);
         selectedAnnotation = currentAnnotation;
       }
-    } else if (currentAnnotation.type === 'pixelate') {
+    } else if (['pixelate', 'blur', 'erase'].includes(currentAnnotation.type)) {
       if (currentAnnotation.w > 4 && currentAnnotation.h > 4) {
-        currentAnnotation.baked = bakePixelate(currentAnnotation);
+        if (currentAnnotation.type === 'blur') currentAnnotation.baked = bakeBlur(currentAnnotation);
+        else if (currentAnnotation.type === 'erase') currentAnnotation.baked = bakeErase(currentAnnotation);
+        else currentAnnotation.baked = bakePixelate(currentAnnotation);
+        annotations.push(currentAnnotation);
+        selectedAnnotation = currentAnnotation;
+      }
+    } else if (currentAnnotation.type === 'spotlight') {
+      if (currentAnnotation.w > 8 && currentAnnotation.h > 8) {
         annotations.push(currentAnnotation);
         selectedAnnotation = currentAnnotation;
       }
@@ -653,26 +697,74 @@ function onPointerUp(e) {
 function redraw(includeHandles = true) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  if (baseImage) {
-    ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
+  const pad = activeBackdrop !== 'none' ? 44 : 0;
+
+  // 1. If Studio Framing Backdrop is active, draw gradient background & drop shadow
+  if (activeBackdrop !== 'none') {
+    const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    if (activeBackdrop === 'sunset') {
+      grad.addColorStop(0, '#f093fb');
+      grad.addColorStop(1, '#f5576c');
+    } else if (activeBackdrop === 'ocean') {
+      grad.addColorStop(0, '#4facfe');
+      grad.addColorStop(1, '#00f2fe');
+    } else if (activeBackdrop === 'obsidian') {
+      grad.addColorStop(0, '#27272a');
+      grad.addColorStop(1, '#09090b');
+    } else if (activeBackdrop === 'aurora') {
+      grad.addColorStop(0, '#d299c2');
+      grad.addColorStop(1, '#fef9d7');
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Soft 3D drop shadow
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.42)';
+    ctx.shadowBlur = 32;
+    ctx.shadowOffsetY = 16;
+    ctx.beginPath();
+    ctx.roundRect(pad, pad, imageWidth, imageHeight, 14);
+    ctx.fillStyle = '#000000';
+    ctx.fill();
+    ctx.restore();
   }
 
-  // 1. Pixelations first (bottom layer)
-  annotations.filter(a => a.type === 'pixelate').forEach(a => renderPixelate(a));
+  ctx.save();
+  if (activeBackdrop !== 'none') {
+    // Clip screenshot to rounded rect and translate
+    ctx.beginPath();
+    ctx.roundRect(pad, pad, imageWidth, imageHeight, 14);
+    ctx.clip();
+    ctx.translate(pad, pad);
+  }
 
-  // 2. Highlighters (semi-transparent layer)
+  // Draw base screenshot
+  if (baseImage) {
+    ctx.drawImage(baseImage, 0, 0, imageWidth, imageHeight);
+  }
+
+  // 1. Redactions first (pixelate, blur, erase)
+  annotations.filter(a => ['pixelate', 'blur', 'erase'].includes(a.type)).forEach(a => renderRedaction(a));
+
+  // 2. Spotlights
+  renderSpotlightsLayer();
+
+  // 3. Highlighters (semi-transparent layer)
   annotations.filter(a => a.type === 'highlighter').forEach(a => renderHighlighter(a));
 
-  // 3. Vector annotations
-  annotations.filter(a => a.type !== 'pixelate' && a.type !== 'highlighter' && a.type !== 'magnifier').forEach(a => renderAnnotation(a));
+  // 4. Vector annotations
+  annotations.filter(a => !['pixelate', 'blur', 'erase', 'highlighter', 'magnifier', 'spotlight'].includes(a.type)).forEach(a => renderAnnotation(a));
 
-  // 4. Magnifiers (top layer with lens zoom)
+  // 5. Magnifiers (top layer with lens zoom)
   annotations.filter(a => a.type === 'magnifier').forEach(a => renderMagnifier(a));
 
-  // Active drawing
+  // Active drawing preview
   if (currentAnnotation && isDrawing) {
-    if (currentAnnotation.type === 'pixelate') {
-      renderPixelate(currentAnnotation);
+    if (['pixelate', 'blur', 'erase'].includes(currentAnnotation.type)) {
+      renderRedaction(currentAnnotation);
+    } else if (currentAnnotation.type === 'spotlight') {
+      renderSpotlightsLayer(currentAnnotation);
     } else if (currentAnnotation.type === 'highlighter') {
       renderHighlighter(currentAnnotation);
     } else if (currentAnnotation.type === 'magnifier') {
@@ -690,9 +782,22 @@ function redraw(includeHandles = true) {
       renderArrowHandles(selectedAnnotation);
     } else if (selectedAnnotation.type === 'step' || selectedAnnotation.type === 'cloud') {
       renderPointerTipHandle(selectedAnnotation);
-    } else if (selectedAnnotation.type === 'pixelate') {
-      renderPixelateSelection(selectedAnnotation);
+    } else if (['pixelate', 'blur', 'erase', 'spotlight', 'rect'].includes(selectedAnnotation.type)) {
+      renderBoxSelection(selectedAnnotation);
     }
+  }
+
+  ctx.restore();
+
+  // Draw subtle outer border around rounded screenshot frame
+  if (activeBackdrop !== 'none') {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(pad, pad, imageWidth, imageHeight, 14);
+    ctx.stroke();
+    ctx.restore();
   }
 }
 
@@ -1073,7 +1178,7 @@ function applyCrop(x, y, w, h) {
       if (a.tipX !== undefined) { a.tipX -= x; a.tipY -= y; }
       if (a.sourceX !== undefined) { a.sourceX -= x; a.sourceY -= y; }
       a.drawable = null;
-      if (a.type === 'pixelate') a.baked = null;
+      if (['pixelate', 'blur', 'erase'].includes(a.type)) a.baked = null;
     });
 
     redraw();
@@ -1081,13 +1186,13 @@ function applyCrop(x, y, w, h) {
   baseImage.src = offscreen.toDataURL('image/png');
 }
 
-// ⬛ 100% Persistent Pixelate & Blur
+// ⬛ 100% Persistent Pixelate, Frosted Blur & Smart Erase
 function bakePixelate(a) {
   if (!baseImage) return null;
   const sx = Math.max(0, Math.floor(a.x));
   const sy = Math.max(0, Math.floor(a.y));
-  const sw = Math.min(canvas.width - sx, Math.floor(a.w));
-  const sh = Math.min(canvas.height - sy, Math.floor(a.h));
+  const sw = Math.min(imageWidth - sx, Math.floor(a.w));
+  const sh = Math.min(imageHeight - sy, Math.floor(a.h));
   if (sw < 4 || sh < 4) return null;
 
   const bs = a.blockSize || 12;
@@ -1129,19 +1234,140 @@ function bakePixelate(a) {
   return { off, sx, sy, sw, sh };
 }
 
-function renderPixelate(a) {
+function bakeBlur(a) {
+  if (!baseImage) return null;
+  const sx = Math.max(0, Math.floor(a.x));
+  const sy = Math.max(0, Math.floor(a.y));
+  const sw = Math.min(imageWidth - sx, Math.floor(a.w));
+  const sh = Math.min(imageHeight - sy, Math.floor(a.h));
+  if (sw < 4 || sh < 4) return null;
+
+  const off = document.createElement('canvas');
+  off.width = sw;
+  off.height = sh;
+  const octx = off.getContext('2d');
+
+  // Smooth multi-pass downsample blur
+  const lowW = Math.max(3, Math.floor(sw / 8));
+  const lowH = Math.max(3, Math.floor(sh / 8));
+  const temp = document.createElement('canvas');
+  temp.width = lowW;
+  temp.height = lowH;
+  const tctx = temp.getContext('2d');
+  tctx.imageSmoothingEnabled = true;
+  tctx.imageSmoothingQuality = 'high';
+  tctx.drawImage(baseImage, sx, sy, sw, sh, 0, 0, lowW, lowH);
+
+  octx.imageSmoothingEnabled = true;
+  octx.imageSmoothingQuality = 'high';
+  octx.drawImage(temp, 0, 0, lowW, lowH, 0, 0, sw, sh);
+
+  return { off, sx, sy, sw, sh };
+}
+
+function bakeErase(a) {
+  if (!baseImage) return null;
+  const sx = Math.max(0, Math.floor(a.x));
+  const sy = Math.max(0, Math.floor(a.y));
+  const sw = Math.min(imageWidth - sx, Math.floor(a.w));
+  const sh = Math.min(imageHeight - sy, Math.floor(a.h));
+  if (sw < 4 || sh < 4) return null;
+
+  const off = document.createElement('canvas');
+  off.width = sw;
+  off.height = sh;
+  const octx = off.getContext('2d');
+
+  // Sample perimeter pixels from baseImage
+  const sampleCanv = document.createElement('canvas');
+  sampleCanv.width = imageWidth;
+  sampleCanv.height = imageHeight;
+  const sctx = sampleCanv.getContext('2d');
+  sctx.drawImage(baseImage, 0, 0);
+
+  const x0 = Math.max(0, sx - 3);
+  const y0 = Math.max(0, sy - 3);
+  const w0 = Math.min(imageWidth - x0, sw + 6);
+  const h0 = Math.min(imageHeight - y0, sh + 6);
+
+  try {
+    const imgData = sctx.getImageData(x0, y0, w0, h0);
+    const data = imgData.data;
+
+    let rSum = 0, gSum = 0, bSum = 0, count = 0;
+    for (let py = 0; py < h0; py++) {
+      for (let px = 0; px < w0; px++) {
+        if (px < 3 || px >= w0 - 3 || py < 3 || py >= h0 - 3) {
+          const idx = (py * w0 + px) * 4;
+          rSum += data[idx];
+          gSum += data[idx + 1];
+          bSum += data[idx + 2];
+          count++;
+        }
+      }
+    }
+    const avgR = Math.round(rSum / Math.max(1, count));
+    const avgG = Math.round(gSum / Math.max(1, count));
+    const avgB = Math.round(bSum / Math.max(1, count));
+
+    octx.fillStyle = `rgb(${avgR}, ${avgG}, ${avgB})`;
+    octx.fillRect(0, 0, sw, sh);
+  } catch (err) {
+    console.error("Bake erase error:", err);
+  }
+
+  return { off, sx, sy, sw, sh };
+}
+
+function renderRedaction(a) {
   if (!a.baked) {
-    a.baked = bakePixelate(a);
+    if (a.type === 'blur') a.baked = bakeBlur(a);
+    else if (a.type === 'erase') a.baked = bakeErase(a);
+    else a.baked = bakePixelate(a);
   }
   if (a.baked) {
     ctx.drawImage(a.baked.off, a.baked.sx, a.baked.sy);
   }
 }
 
-function renderPixelateSelection(a) {
+// 💡 Spotlight Focus Mask
+function renderSpotlightsLayer(activePreview = null) {
+  const spotlights = annotations.filter(a => a.type === 'spotlight');
+  if (spotlights.length === 0 && (!activePreview || activePreview.type !== 'spotlight')) {
+    return;
+  }
+
+  const all = [...spotlights];
+  if (activePreview && activePreview.type === 'spotlight' && activePreview.w > 4 && activePreview.h > 4) {
+    all.push(activePreview);
+  }
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.58)';
+
+  // Build cutout mask path using evenodd rule
+  ctx.beginPath();
+  ctx.rect(0, 0, imageWidth, imageHeight);
+  all.forEach(s => {
+    ctx.roundRect(s.x, s.y, s.w, s.h, s.radius || 10);
+  });
+  ctx.fill('evenodd');
+
+  // Draw glowing crisp border around each spotlight aperture
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.lineWidth = 2;
+  all.forEach(s => {
+    ctx.beginPath();
+    ctx.roundRect(s.x, s.y, s.w, s.h, s.radius || 10);
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
+function renderBoxSelection(a) {
   ctx.save();
   ctx.lineWidth = 1.5;
-  ctx.strokeStyle = '#ff6b6b';
+  ctx.strokeStyle = '#4dabf7';
   ctx.setLineDash([4, 4]);
   ctx.strokeRect(a.x, a.y, a.w, a.h);
   ctx.restore();
@@ -1228,7 +1454,7 @@ function findAnnotationAt(pos) {
       const dx = (pos.x - a.cx) / a.rx;
       const dy = (pos.y - a.cy) / a.ry;
       if (Math.abs(dx * dx + dy * dy - 1) < 0.4) return a;
-    } else if (a.type === 'rect' || a.type === 'cloud' || a.type === 'highlighter' || a.type === 'pixelate') {
+    } else if (['rect', 'cloud', 'highlighter', 'pixelate', 'blur', 'erase', 'spotlight'].includes(a.type)) {
       if (pos.x >= a.x - 5 && pos.x <= a.x + a.w + 5 &&
           pos.y >= a.y - 5 && pos.y <= a.y + a.h + 5) return a;
     } else if (a.type === 'magnifier') {
@@ -1420,8 +1646,16 @@ function handleKeyDown(e) {
     setTool('text');
   } else if (e.key.toLowerCase() === 'p') {
     setTool('pen');
+  } else if (e.key.toLowerCase() === 's') {
+    setTool('spotlight');
   } else if (e.key.toLowerCase() === 'x') {
     setTool('pixelate');
+  } else if (e.key.toLowerCase() === 'b') {
+    setTool('blur');
+  } else if (e.key.toLowerCase() === 'e') {
+    setTool('erase');
+  } else if (e.key.toLowerCase() === 'f') {
+    cycleBackdrop();
   } else if (e.key.toLowerCase() === 'v') {
     setTool('select');
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -1451,4 +1685,16 @@ function handleKeyDown(e) {
     selectedAnnotation.number = Math.max(1, (Number(selectedAnnotation.number) || 1) - 1);
     redraw();
   }
+}
+
+function cycleBackdrop() {
+  const modes = ['none', 'sunset', 'ocean', 'obsidian', 'aurora'];
+  const curIdx = modes.indexOf(activeBackdrop);
+  const next = modes[(curIdx + 1) % modes.length];
+  activeBackdrop = next;
+  document.querySelectorAll('.backdrop-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.backdrop === next);
+  });
+  resizeCanvasForBackdrop();
+  redraw();
 }
