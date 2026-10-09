@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Doodlshot</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="../assets/rough.js"></script>
+</head>
+<body>
+
+  <!-- Floating Shottr-inspired Toolbar -->
+  <div id="toolbar-container">
+    <div class="brand-badge">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 19l7-7 3 3-7 7-3-3z"/>
+        <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
+        <path d="M2 2l7.586 7.586"/>
+        <circle cx="11" cy="11" r="2"/>
+      </svg>
+      Doodlshot
+    </div>
+
+    <!-- Drawing Tools -->
+    <div class="tool-group">
+      <button class="tool-btn" id="tool-select" title="Select & Move (V)">
+        <svg viewBox="0 0 24 24"><path d="M3 3l7 18 3-7 7-3L3 3z"/></svg>
+      </button>
+      <button class="tool-btn active" id="tool-arrow" title="Bendable Curved Arrow (A)">
+        <svg viewBox="0 0 24 24">
+          <path d="M4 20 C 10 18, 14 10, 20 5"/>
+          <path d="M14 4 L 20 5 L 19 11"/>
+        </svg>
+      </button>
+      <button class="tool-btn" id="tool-oval" title="Hand-drawn Oval (O)">
+        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="6"/></svg>
+      </button>
+      <button class="tool-btn" id="tool-rect" title="Hand-drawn Rectangle (R)">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/></svg>
+      </button>
+      <button class="tool-btn" id="tool-cloud" title="Hand-drawn Cloud (C)">
+        <svg viewBox="0 0 24 24">
+          <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+        </svg>
+      </button>
+      <button class="tool-btn" id="tool-pen" title="Freehand Pen (P)">
+        <svg viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+      </button>
+      <button class="tool-btn" id="tool-text" title="Hand-drawn Text (T)">
+        <svg viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+      </button>
+      <button class="tool-btn" id="tool-pixelate" title="Pixelate / Redact (X)">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7" fill="currentColor"/><rect x="3" y="14" width="7" height="7" fill="currentColor"/><rect x="14" y="14" width="7" height="7"/></svg>
+      </button>
+    </div>
+
+    <!-- Color Palette -->
+    <div class="tool-group color-swatch-wrap">
+      <div class="color-dot active" data-color="#ff3b30" style="background: #ff3b30;" title="Shottr Red"></div>
+      <div class="color-dot" data-color="#ffcc00" style="background: #ffcc00;" title="Warm Yellow"></div>
+      <div class="color-dot" data-color="#007aff" style="background: #007aff;" title="Vibrant Blue"></div>
+      <div class="color-dot" data-color="#34c759" style="background: #34c759;" title="Green"></div>
+      <div class="color-dot" data-color="#ffffff" style="background: #ffffff;" title="White"></div>
+      <div class="color-dot" data-color="#1c1c1e" style="background: #1c1c1e; border: 1px solid rgba(255,255,255,0.3);" title="Black"></div>
+    </div>
+
+    <!-- Stroke width -->
+    <div class="tool-group">
+      <button class="tool-btn" id="stroke-thin" title="Thin Stroke (2px)" style="font-size: 11px;">1x</button>
+      <button class="tool-btn active" id="stroke-medium" title="Medium Stroke (4px)" style="font-size: 13px; font-weight: bold;">2x</button>
+      <button class="tool-btn" id="stroke-thick" title="Thick Stroke (7px)" style="font-size: 15px; font-weight: 900;">3x</button>
+    </div>
+
+    <!-- Actions -->
+    <div class="tool-group" style="border-right: none; padding-left: 6px;">
+      <button class="tool-btn" id="btn-undo" title="Undo (Ctrl+Z)">
+        <svg viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+      </button>
+      <button class="action-btn" id="btn-save" title="Save to File (Ctrl+S)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Save
+      </button>
+      <button class="action-btn primary" id="btn-copy" title="Copy to Clipboard & Close (Ctrl+C / Enter)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy
+      </button>
+    </div>
+  </div>
+
+  <!-- Viewport & Canvas -->
+  <div id="canvas-viewport">
+    <div id="canvas-wrapper">
+      <canvas id="editor-canvas"></canvas>
+      <textarea id="text-editor-input" rows="1" spellcheck="false"></textarea>
+    </div>
+  </div>
+
+  <div id="info-badge">
+    <span id="badge-dims">800 × 600</span> · <span id="badge-tool">Bendable Arrow</span>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
