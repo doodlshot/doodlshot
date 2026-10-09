@@ -1021,12 +1021,21 @@ function onPointerUp(e) {
 
   // OCR execution
   if (currentAnnotation && currentAnnotation.type === 'ocr') {
-    if (currentAnnotation.w > 12 && currentAnnotation.h > 12) {
-      performOcrOnRegion(currentAnnotation.x, currentAnnotation.y, currentAnnotation.w, currentAnnotation.h);
+    const ocrBox = {
+      x: Math.round(currentAnnotation.x),
+      y: Math.round(currentAnnotation.y),
+      w: Math.round(currentAnnotation.w),
+      h: Math.round(currentAnnotation.h)
+    };
+    currentAnnotation = null;
+    isDrawing = false;
+    redraw(false); // Clean canvas: removes all selection overlays, brackets, and handles!
+
+    if (ocrBox.w > 6 && ocrBox.h > 6) {
+      performOcrOnRegion(ocrBox.x, ocrBox.y, ocrBox.w, ocrBox.h);
     } else {
       showToast('Drag over any text or QR code to recognize', 2000);
     }
-    currentAnnotation = null;
     setTool('select');
     return;
   }
@@ -1867,8 +1876,8 @@ function applyCrop(x, y, w, h) {
 // 🔍 Text OCR & QR Scanner Viewfinder Preview
 function renderOcrOverlay(a) {
   ctx.save();
-  // Semi-transparent scan tint
-  ctx.fillStyle = 'rgba(14, 165, 233, 0.12)';
+  // Semi-transparent subtle cyan tint so text remains completely legible
+  ctx.fillStyle = 'rgba(14, 165, 233, 0.08)';
   ctx.fillRect(a.x, a.y, a.w, a.h);
 
   // Subtle dashed cyan boundary
@@ -1893,30 +1902,6 @@ function renderOcrOverlay(a) {
   ctx.moveTo(a.x + a.w - clen, a.y + a.h); ctx.lineTo(a.x + a.w, a.y + a.h); ctx.lineTo(a.x + a.w, a.y + a.h - clen);
   ctx.stroke();
 
-  // Floating center badge
-  if (a.w > 70 && a.h > 35) {
-    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif';
-    const text = '🔍 Release to scan';
-    const tm = ctx.measureText(text);
-    const pw = tm.width + 16;
-    const ph = 22;
-    const cx = a.x + a.w / 2;
-    const cy = a.y + a.h / 2;
-
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-    ctx.beginPath();
-    ctx.roundRect(cx - pw / 2, cy - ph / 2, pw, ph, 11);
-    ctx.fill();
-
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, cx, cy);
-  }
   ctx.restore();
 }
 
@@ -2546,13 +2531,20 @@ function sendToBackend(action, data) {
 // ----------------------------------------------------
 
 function performOcrOnRegion(x, y, w, h) {
-  const offscreen = document.createElement('canvas');
-  offscreen.width = Math.max(1, Math.round(w));
-  offscreen.height = Math.max(1, Math.round(h));
-  const octx = offscreen.getContext('2d');
+  if (!baseImage) return;
 
   const pad = getBackdropPad();
-  octx.drawImage(canvas, x + pad, y + pad, w, h, 0, 0, w, h);
+  const clampX = Math.max(0, Math.min(x, imageWidth - 1));
+  const clampY = Math.max(0, Math.min(y, imageHeight - 1));
+  const clampW = Math.max(1, Math.min(w, imageWidth - clampX));
+  const clampH = Math.max(1, Math.min(h, imageHeight - clampY));
+
+  const offscreen = document.createElement('canvas');
+  offscreen.width = clampW;
+  offscreen.height = clampH;
+  const octx = offscreen.getContext('2d');
+
+  octx.drawImage(canvas, clampX + pad, clampY + pad, clampW, clampH, 0, 0, clampW, clampH);
 
   showToast('🔍 Scanning text & QR codes...', 4000);
   const dataUrl = offscreen.toDataURL('image/png');
@@ -2560,8 +2552,17 @@ function performOcrOnRegion(x, y, w, h) {
 }
 
 function performOcrFullImage() {
+  if (!baseImage) return;
+  const pad = getBackdropPad();
+  const offscreen = document.createElement('canvas');
+  offscreen.width = imageWidth;
+  offscreen.height = imageHeight;
+  const octx = offscreen.getContext('2d');
+  redraw(false);
+  octx.drawImage(canvas, pad, pad, imageWidth, imageHeight, 0, 0, imageWidth, imageHeight);
+
   showToast('🔍 Scanning full screenshot...', 5000);
-  const dataUrl = canvas.toDataURL('image/png');
+  const dataUrl = offscreen.toDataURL('image/png');
   sendToBackend('ocr_scan', dataUrl);
 }
 

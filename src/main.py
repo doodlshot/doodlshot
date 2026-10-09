@@ -140,12 +140,48 @@ class DoodlshotApp:
                             subprocess.run(["notify-send", "-a", "Doodlshot", "QR Code Copied", preview])
                             result_payload = {"type": "qr", "text": qr_text}
                         else:
-                            # 2. Try Tesseract OCR
-                            tess_res = subprocess.run(["tesseract", tmp_path, "stdout", "-l", "eng", "--psm", "6"], capture_output=True, text=True)
+                            # 2. Multi-Pass Tesseract OCR Engine
+                            ocr_text = ""
+                            # Pass 1: Standard auto-segmentation
+                            tess_res = subprocess.run(["tesseract", tmp_path, "stdout", "-l", "eng"], capture_output=True, text=True)
                             ocr_text = tess_res.stdout.strip()
+
+                            # Pass 2: PSM 6 (single uniform block of text)
                             if not ocr_text:
-                                tess_res = subprocess.run(["tesseract", tmp_path, "stdout", "-l", "eng"], capture_output=True, text=True)
+                                tess_res = subprocess.run(["tesseract", tmp_path, "stdout", "-l", "eng", "--psm", "6"], capture_output=True, text=True)
                                 ocr_text = tess_res.stdout.strip()
+
+                            # Pass 3: PSM 7 (single line of text)
+                            if not ocr_text:
+                                tess_res = subprocess.run(["tesseract", tmp_path, "stdout", "-l", "eng", "--psm", "7"], capture_output=True, text=True)
+                                ocr_text = tess_res.stdout.strip()
+
+                            # Pass 4: PSM 11 (sparse text)
+                            if not ocr_text:
+                                tess_res = subprocess.run(["tesseract", tmp_path, "stdout", "-l", "eng", "--psm", "11"], capture_output=True, text=True)
+                                ocr_text = tess_res.stdout.strip()
+
+                            # Pass 5: Preprocessing via ImageMagick for tight/tiny selections
+                            if not ocr_text:
+                                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as prep_tmp:
+                                    prep_path = prep_tmp.name
+                                try:
+                                    subprocess.run(["magick", tmp_path, "-bordercolor", "white", "-border", "15x15", "-resize", "200%", prep_path], capture_output=True)
+                                    tess_res = subprocess.run(["tesseract", prep_path, "stdout", "-l", "eng"], capture_output=True, text=True)
+                                    ocr_text = tess_res.stdout.strip()
+                                    if not ocr_text:
+                                        tess_res = subprocess.run(["tesseract", prep_path, "stdout", "-l", "eng", "--psm", "6"], capture_output=True, text=True)
+                                        ocr_text = tess_res.stdout.strip()
+                                except Exception as p_ex:
+                                    print(f"OCR preprocess error: {p_ex}", file=sys.stderr)
+                                finally:
+                                    if os.path.exists(prep_path):
+                                        os.remove(prep_path)
+
+                            # Clean up redundant trailing whitespace while preserving layout
+                            if ocr_text:
+                                lines = [line.rstrip() for line in ocr_text.splitlines()]
+                                ocr_text = "\n".join(lines).strip()
 
                             if ocr_text:
                                 try:
