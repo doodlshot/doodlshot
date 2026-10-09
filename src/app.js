@@ -241,6 +241,10 @@ function initUI() {
         if (selectedAnnotation) {
           selectedAnnotation.width = activeWidth;
           selectedAnnotation.drawable = null;
+          if (['pixelate', 'blur', 'erase'].includes(selectedAnnotation.type)) {
+            selectedAnnotation.blockSize = activeWidth <= 3.0 ? 8 : (activeWidth > 5.5 ? 18 : 12);
+            selectedAnnotation.baked = null;
+          }
           redraw();
         }
       });
@@ -618,7 +622,8 @@ function onPointerDown(e) {
       y: pos.y,
       w: 0,
       h: 0,
-      blockSize: 12,
+      width: activeWidth,
+      blockSize: activeWidth <= 3.0 ? 8 : (activeWidth > 5.5 ? 18 : 12),
       baked: null
     };
   } else if (activeTool === 'crop') {
@@ -1538,16 +1543,19 @@ function bakeBlur(a) {
   const rawH = Math.floor(a.h);
   if (rawW < 4 || rawH < 4) return null;
 
-  // Adaptive soft feather radius to prevent harsh cutoff edges
-  const feather = Math.max(4, Math.min(10, Math.min(rawW, rawH) * 0.22));
-  const fRound = Math.round(feather);
+  // Determine blur strength (responsive to stroke width: thin=16, medium=24, thick=32)
+  const blurRadius = a.blurRadius || (a.width <= 3.0 ? 16 : (a.width > 5.5 ? 32 : 24));
+
+  // Outer feathering collar: inside the box is 100% solid redaction, outside fades out to 0
+  const feather = Math.max(4, Math.min(8, Math.min(rawW, rawH) * 0.22));
+  const fRound = Math.ceil(feather);
   const sx = Math.max(0, rawX - fRound);
   const sy = Math.max(0, rawY - fRound);
   const sw = Math.min(imageWidth - sx, rawW + fRound * 2);
   const sh = Math.min(imageHeight - sy, rawH + fRound * 2);
 
-  // Seamless boundary margin so diffusion naturally samples surrounding context
-  const margin = 20;
+  // Generous margin for 3-pass Gaussian convolution sampling
+  const margin = Math.round(blurRadius * 1.5);
   const x0 = Math.max(0, sx - margin);
   const y0 = Math.max(0, sy - margin);
   const x1 = Math.min(imageWidth, sx + sw + margin);
@@ -1564,33 +1572,42 @@ function bakeBlur(a) {
 
   try {
     const imgData = sctx.getImageData(0, 0, pw, ph);
-    gaussianBlurImageData(imgData, 12);
+    gaussianBlurImageData(imgData, blurRadius);
     sctx.putImageData(imgData, 0, 0);
 
-    // Build soft feathered mask to eliminate sharp rectangular cut-offs
+    // Analytic Euclidean distance mask:
+    // Core (distOutside == 0): 100% alpha (255) - 0% underlying text bleed-through!
+    // Collar (distOutside > 0): Hermite smoothstep fade to 0 - zero razor seams!
     const mask = document.createElement('canvas');
     mask.width = sw;
     mask.height = sh;
     const mctx = mask.getContext('2d');
+    const mData = mctx.createImageData(sw, sh);
+    const mpx = mData.data;
 
-    const offsetX = rawX - sx;
-    const offsetY = rawY - sy;
-    mctx.fillStyle = '#ffffff';
-    mctx.beginPath();
-    mctx.roundRect(offsetX, offsetY, rawW, rawH, Math.min(6, feather));
-    mctx.fill();
+    const offX = rawX - sx;
+    const offY = rawY - sy;
 
-    // Blur mask for smooth 2D Gaussian alpha falloff
-    const maskData = mctx.getImageData(0, 0, sw, sh);
-    gaussianBlurImageData(maskData, Math.max(2, Math.round(feather * 0.75)));
-    const mpx = maskData.data;
-    for (let i = 0; i < mpx.length; i += 4) {
-      mpx[i + 3] = mpx[i]; // Luminance becomes alpha
-      mpx[i] = 255;
-      mpx[i + 1] = 255;
-      mpx[i + 2] = 255;
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        const qx = Math.max(offX - x, 0, x - (offX + rawW));
+        const qy = Math.max(offY - y, 0, y - (offY + rawH));
+        const distOutside = Math.hypot(qx, qy);
+
+        let alpha = 1.0;
+        if (distOutside > 0) {
+          const t = Math.max(0, 1 - distOutside / feather);
+          alpha = t * t * (3 - 2 * t);
+        }
+
+        const idx = (y * sw + x) * 4;
+        mpx[idx] = 255;
+        mpx[idx + 1] = 255;
+        mpx[idx + 2] = 255;
+        mpx[idx + 3] = Math.round(alpha * 255);
+      }
     }
-    mctx.putImageData(maskData, 0, 0);
+    mctx.putImageData(mData, 0, 0);
 
     // Composite blurred patch with feathered alpha mask
     const off = document.createElement('canvas');
