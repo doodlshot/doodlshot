@@ -210,6 +210,12 @@ function getCanvasPos(e) {
 function onPointerDown(e) {
   const pos = getCanvasPos(e);
 
+  // If text editor is open, commit existing text first!
+  if (textEditor.style.display === 'block') {
+    finalizeText();
+    return;
+  }
+
   // If in select mode or clicking near an arrow handle
   if (selectedAnnotation && selectedAnnotation.type === 'arrow') {
     const handle = hitTestArrowHandles(selectedAnnotation, pos);
@@ -241,6 +247,7 @@ function onPointerDown(e) {
 
   isDrawing = true;
   saveHistoryState();
+  const randSeed = Math.floor(Math.random() * 65536) + 1;
 
   if (activeTool === 'arrow') {
     currentAnnotation = {
@@ -250,7 +257,8 @@ function onPointerDown(e) {
       p2: { x: pos.x, y: pos.y },
       color: activeColor,
       width: activeWidth,
-      roughness: activeRoughness
+      roughness: activeRoughness,
+      seed: randSeed
     };
   } else if (activeTool === 'oval') {
     currentAnnotation = {
@@ -263,7 +271,8 @@ function onPointerDown(e) {
       ry: 0,
       color: activeColor,
       width: activeWidth,
-      roughness: activeRoughness
+      roughness: activeRoughness,
+      seed: randSeed
     };
   } else if (activeTool === 'rect') {
     currentAnnotation = {
@@ -276,7 +285,8 @@ function onPointerDown(e) {
       h: 0,
       color: activeColor,
       width: activeWidth,
-      roughness: activeRoughness
+      roughness: activeRoughness,
+      seed: randSeed
     };
   } else if (activeTool === 'cloud') {
     currentAnnotation = {
@@ -289,7 +299,8 @@ function onPointerDown(e) {
       h: 0,
       color: activeColor,
       width: activeWidth,
-      roughness: activeRoughness
+      roughness: activeRoughness,
+      seed: randSeed
     };
   } else if (activeTool === 'pen') {
     currentAnnotation = {
@@ -297,7 +308,8 @@ function onPointerDown(e) {
       points: [{ x: pos.x, y: pos.y }],
       color: activeColor,
       width: activeWidth,
-      roughness: activeRoughness
+      roughness: activeRoughness,
+      seed: randSeed
     };
   } else if (activeTool === 'pixelate') {
     currentAnnotation = {
@@ -427,6 +439,7 @@ function redraw(includeHandles = true) {
 }
 
 function renderAnnotation(a, isDraft = false) {
+  const seed = a.seed || 42;
   if (a.type === 'arrow') {
     renderBendableArrow(a);
   } else if (a.type === 'oval') {
@@ -435,7 +448,8 @@ function renderAnnotation(a, isDraft = false) {
         stroke: a.color,
         strokeWidth: a.width,
         roughness: a.roughness,
-        bowing: 1.5
+        bowing: 1.5,
+        seed: seed
       });
     }
   } else if (a.type === 'rect') {
@@ -444,7 +458,8 @@ function renderAnnotation(a, isDraft = false) {
         stroke: a.color,
         strokeWidth: a.width,
         roughness: a.roughness,
-        bowing: 1.2
+        bowing: 1.2,
+        seed: seed
       });
     }
   } else if (a.type === 'cloud') {
@@ -463,6 +478,7 @@ function renderAnnotation(a, isDraft = false) {
 // The Signature Bendable Arrow
 function renderBendableArrow(a) {
   const { p0, p1, p2, color, width, roughness } = a;
+  const seed = a.seed || 42;
 
   // Draw the smooth quadratic Bézier curve with Rough.js path
   const curvePath = `M ${p0.x} ${p0.y} Q ${p1.x} ${p1.y} ${p2.x} ${p2.y}`;
@@ -470,7 +486,8 @@ function renderBendableArrow(a) {
     stroke: color,
     strokeWidth: width,
     roughness: roughness,
-    bowing: 1.2
+    bowing: 1.2,
+    seed: seed
   });
 
   // Calculate tangent at arrow tip p2: T = 2*(p2 - p1)
@@ -491,12 +508,14 @@ function renderBendableArrow(a) {
   rc.linearPath([[w1x, w1y], [p2.x, p2.y], [w2x, w2y]], {
     stroke: color,
     strokeWidth: width,
-    roughness: roughness
+    roughness: roughness,
+    seed: seed + 7
   });
 }
 
 function renderCloud(a) {
   const { x, y, w, h, color, width, roughness } = a;
+  const seed = a.seed || 42;
   // Bumpy cloud path
   const cx = x + w / 2;
   const cy = y + h / 2;
@@ -520,7 +539,8 @@ function renderCloud(a) {
     stroke: color,
     strokeWidth: width,
     roughness: roughness + 0.3,
-    bowing: 2.0
+    bowing: 2.0,
+    seed: seed
   });
 }
 
@@ -529,7 +549,8 @@ function renderPen(a) {
   rc.curve(pts, {
     stroke: a.color,
     strokeWidth: a.width,
-    roughness: 0.8
+    roughness: 0.8,
+    seed: a.seed || 42
   });
 }
 
@@ -653,6 +674,9 @@ function findAnnotationAt(pos) {
 let activeTextPos = null;
 
 function spawnTextInput(x, y) {
+  if (textEditor.style.display === 'block') {
+    finalizeText();
+  }
   activeTextPos = { x, y };
   const rect = canvas.getBoundingClientRect();
   const scale = rect.width / canvas.width;
@@ -667,22 +691,28 @@ function spawnTextInput(x, y) {
 }
 
 function finalizeText() {
+  if (textEditor.style.display !== 'block') return;
   const val = textEditor.value.trim();
   textEditor.style.display = 'none';
 
   if (val && activeTextPos) {
     saveHistoryState();
-    annotations.push({
+    const newAnno = {
       type: 'text',
       x: activeTextPos.x,
       y: activeTextPos.y,
       text: val,
       color: activeColor,
-      fontSize: 28
-    });
+      fontSize: 28,
+      seed: Math.floor(Math.random() * 65536) + 1
+    };
+    annotations.push(newAnno);
+    selectedAnnotation = newAnno;
     redraw();
+    setTool('select');
   }
   activeTextPos = null;
+  textEditor.value = '';
 }
 
 // ----------------------------------------------------
