@@ -17,6 +17,9 @@ from pathlib import Path
 # Ensure src directory is in sys.path
 sys.path.insert(0, str(Path(__file__).parent.resolve()))
 
+# Disable WebKit bubblewrap sandbox so media processes can read local recordings
+os.environ["WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS"] = "1"
+
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('WebKit', '6.0')

@@ -268,7 +268,12 @@
     });
 
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
+      const player = document.getElementById('video-player');
+      if (e.key === ' ' && player && e.target.tagName !== 'BUTTON') {
+        e.preventDefault();
+        if (player.paused) player.play();
+        else player.pause();
+      } else if (e.key === 'Escape') {
         sendToHost('close', null);
       } else if (e.key.toLowerCase() === 'c' && (e.ctrlKey || e.metaKey)) {
         sendToHost('copy_video', currentVideoPath);
