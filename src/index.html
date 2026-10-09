@@ -8,134 +8,208 @@
 </head>
 <body>
 
-  <!-- Floating Shottr-inspired Toolbar -->
-  <div id="toolbar-container">
-    <div class="brand-badge">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-        <circle cx="12" cy="13" r="4"/>
-      </svg>
-      Doodlshot
+  <!-- Floating Shottr-inspired Toolbar & Backdrop Panel -->
+  <div id="toolbar-wrapper">
+    <div id="toolbar-container">
+      <div class="brand-badge">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        Doodlshot
+      </div>
+
+      <!-- Drawing Tools -->
+      <div class="tool-group">
+        <button class="tool-btn" id="tool-select" title="Select & Move (V)">
+          <svg viewBox="0 0 24 24"><path d="M3 3l7 18 3-7 7-3L3 3z"/></svg>
+        </button>
+        <button class="tool-btn active" id="tool-arrow" title="Bendable Curved Arrow (A)">
+          <svg viewBox="0 0 24 24">
+            <path d="M 4 19 Q 8 8 18 5"/>
+            <polyline points="11 5 18 5 18 12"/>
+          </svg>
+        </button>
+        <button class="tool-btn" id="tool-oval" title="Hand-drawn Oval (O)">
+          <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="6"/></svg>
+        </button>
+        <button class="tool-btn" id="tool-rect" title="Hand-drawn Rectangle (R)">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/></svg>
+        </button>
+        <button class="tool-btn" id="tool-cloud" title="Callout Cloud (C)">
+          <svg viewBox="0 0 24 24">
+            <path d="M 5.5 17 A 3.5 3.5 0 0 1 5 10 A 4.5 4.5 0 0 1 12 7 A 5 5 0 0 1 19 10 A 3.5 3.5 0 0 1 18.5 17 Z"/>
+          </svg>
+        </button>
+        <button class="tool-btn" id="tool-step" title="Numbered Step Badge 1, 2, 3 (N)">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 8v8M10 10l2-2"/>
+          </svg>
+        </button>
+        <button class="tool-btn" id="tool-highlighter" title="Highlighter Marker (H)">
+          <svg viewBox="0 0 24 24">
+            <path d="M14 2l4 4L7 17H3v-4L14 2z"/>
+            <path d="M3 22h18"/>
+          </svg>
+        </button>
+        <button class="tool-btn" id="tool-magnifier" title="Magnifier Loupe (M)">
+          <svg viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <line x1="11" y1="8" x2="11" y2="14"/>
+            <line x1="8" y1="11" x2="14" y2="11"/>
+          </svg>
+        </button>
+        <button class="tool-btn" id="tool-pen" title="Freehand Pen (P)">
+          <svg viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+        </button>
+        <button class="tool-btn" id="tool-text" title="Hand-drawn Text (T)">
+          <svg viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+        </button>
+        <button class="tool-btn" id="tool-spotlight" title="Spotlight Focus (S)">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        </button>
+        <button class="tool-btn" id="tool-pixelate" title="Pixelate Mosaic (X)">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7" fill="currentColor"/><rect x="3" y="14" width="7" height="7" fill="currentColor"/><rect x="14" y="14" width="7" height="7"/></svg>
+        </button>
+        <button class="tool-btn" id="tool-blur" title="Frosted Blur (B)">
+          <svg viewBox="0 0 24 24"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+        </button>
+        <button class="tool-btn" id="tool-erase" title="Smart Erase / Inpaint (E)">
+          <svg viewBox="0 0 24 24"><path d="M7 21L20 8l-4-4L3 17l4 4z"/><path d="M18 10l-4-4"/></svg>
+        </button>
+        <button class="tool-btn" id="tool-crop" title="Crop Canvas (K)">
+          <svg viewBox="0 0 24 24">
+            <path d="M6 2v14a2 2 0 0 0 2 2h14"/>
+            <path d="M18 22V8a2 2 0 0 0-2-2H2"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Rich Pastel Palette -->
+      <div class="tool-group color-swatch-wrap">
+        <div class="color-dot active" data-color="#ff6b6b" style="background: #ff6b6b;" title="Pastel Coral"></div>
+        <div class="color-dot" data-color="#ffa94d" style="background: #ffa94d;" title="Pastel Peach"></div>
+        <div class="color-dot" data-color="#4dabf7" style="background: #4dabf7;" title="Pastel Soft Sky"></div>
+        <div class="color-dot" data-color="#38d9a9" style="background: #38d9a9;" title="Pastel Fresh Mint"></div>
+        <div class="color-dot" data-color="#da77f2" style="background: #da77f2;" title="Pastel Lavender"></div>
+        <div class="color-dot" data-color="#ffffff" style="background: #ffffff;" title="Frost White"></div>
+        <div class="color-dot" data-color="#343a40" style="background: #343a40; border: 1px solid rgba(255,255,255,0.35);" title="Matte Slate"></div>
+      </div>
+
+      <!-- Stroke width -->
+      <div class="tool-group">
+        <button class="tool-btn" id="stroke-thin" title="Thin Stroke (2.5px)" style="font-size: 11px;">1x</button>
+        <button class="tool-btn active" id="stroke-medium" title="Medium Stroke (4.5px)" style="font-size: 13px; font-weight: bold;">2x</button>
+        <button class="tool-btn" id="stroke-thick" title="Thick Stroke (7px)" style="font-size: 15px; font-weight: 900;">3x</button>
+      </div>
+
+      <!-- Studio Framing & Backdrop Toggle -->
+      <div class="tool-group">
+        <button class="tool-btn" id="btn-backdrop-toggle" title="Studio Frame & Backdrop (F)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="20" rx="4"/>
+            <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" fill-opacity="0.28"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Actions -->
+      <div class="tool-group" style="border-right: none; padding-left: 6px;">
+        <button class="tool-btn" id="btn-undo" title="Undo (Ctrl+Z)">
+          <svg viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+        </button>
+        <button class="action-btn" id="btn-save" title="Save to File (Ctrl+S)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Save
+        </button>
+        <button class="action-btn primary" id="btn-copy" title="Copy to Clipboard & Close (Ctrl+C / Enter)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy
+        </button>
+      </div>
     </div>
 
-    <!-- Drawing Tools -->
-    <div class="tool-group">
-      <button class="tool-btn" id="tool-select" title="Select & Move (V)">
-        <svg viewBox="0 0 24 24"><path d="M3 3l7 18 3-7 7-3L3 3z"/></svg>
-      </button>
-      <button class="tool-btn active" id="tool-arrow" title="Bendable Curved Arrow (A)">
-        <svg viewBox="0 0 24 24">
-          <path d="M 4 19 Q 8 8 18 5"/>
-          <polyline points="11 5 18 5 18 12"/>
-        </svg>
-      </button>
-      <button class="tool-btn" id="tool-oval" title="Hand-drawn Oval (O)">
-        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="6"/></svg>
-      </button>
-      <button class="tool-btn" id="tool-rect" title="Hand-drawn Rectangle (R)">
-        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/></svg>
-      </button>
-      <button class="tool-btn" id="tool-cloud" title="Callout Cloud (C)">
-        <svg viewBox="0 0 24 24">
-          <path d="M 5.5 17 A 3.5 3.5 0 0 1 5 10 A 4.5 4.5 0 0 1 12 7 A 5 5 0 0 1 19 10 A 3.5 3.5 0 0 1 18.5 17 Z"/>
-        </svg>
-      </button>
-      <button class="tool-btn" id="tool-step" title="Numbered Step Badge 1, 2, 3 (N)">
-        <svg viewBox="0 0 24 24">
-          <circle cx="12" cy="12" r="9"/>
-          <path d="M12 8v8M10 10l2-2"/>
-        </svg>
-      </button>
-      <button class="tool-btn" id="tool-highlighter" title="Highlighter Marker (H)">
-        <svg viewBox="0 0 24 24">
-          <path d="M14 2l4 4L7 17H3v-4L14 2z"/>
-          <path d="M3 22h18"/>
-        </svg>
-      </button>
-      <button class="tool-btn" id="tool-magnifier" title="Magnifier Loupe (M)">
-        <svg viewBox="0 0 24 24">
-          <circle cx="11" cy="11" r="8"/>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          <line x1="11" y1="8" x2="11" y2="14"/>
-          <line x1="8" y1="11" x2="14" y2="11"/>
-        </svg>
-      </button>
-      <button class="tool-btn" id="tool-pen" title="Freehand Pen (P)">
-        <svg viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
-      </button>
-      <button class="tool-btn" id="tool-text" title="Hand-drawn Text (T)">
-        <svg viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
-      </button>
-      <button class="tool-btn" id="tool-spotlight" title="Spotlight Focus (S)">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-      </button>
-      <button class="tool-btn" id="tool-pixelate" title="Pixelate Mosaic (X)">
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7" fill="currentColor"/><rect x="3" y="14" width="7" height="7" fill="currentColor"/><rect x="14" y="14" width="7" height="7"/></svg>
-      </button>
-      <button class="tool-btn" id="tool-blur" title="Frosted Blur (B)">
-        <svg viewBox="0 0 24 24"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
-      </button>
-      <button class="tool-btn" id="tool-erase" title="Smart Erase / Inpaint (E)">
-        <svg viewBox="0 0 24 24"><path d="M7 21L20 8l-4-4L3 17l4 4z"/><path d="M18 10l-4-4"/></svg>
-      </button>
-      <button class="tool-btn" id="tool-crop" title="Crop Canvas (K)">
-        <svg viewBox="0 0 24 24">
-          <path d="M6 2v14a2 2 0 0 0 2 2h14"/>
-          <path d="M18 22V8a2 2 0 0 0-2-2H2"/>
-        </svg>
-      </button>
-    </div>
+    <!-- Studio Framing & Backdrop Drawer Panel -->
+    <div id="backdrop-panel" class="backdrop-panel-collapsed">
+      <div class="swatch-list">
+        <div class="bd-swatch active" data-bd="none" title="Raw Screenshot (No Frame)">
+          <span class="swatch-chip none-chip"></span>
+          <span class="swatch-title">None</span>
+        </div>
+        <div class="bd-swatch" data-bd="sonoma" title="macOS Sonoma Dusk">
+          <span class="swatch-chip" style="background: linear-gradient(135deg, #1e1b4b, #4338ca 40%, #7c3aed 75%, #db2777);"></span>
+          <span class="swatch-title">Sonoma</span>
+        </div>
+        <div class="bd-swatch" data-bd="monterey" title="macOS Monterey Ocean">
+          <span class="swatch-chip" style="background: linear-gradient(135deg, #0f172a, #1e3a8a 45%, #0284c7 80%, #38bdf8);"></span>
+          <span class="swatch-title">Monterey</span>
+        </div>
+        <div class="bd-swatch" data-bd="peach" title="CleanShot Pastel Peach">
+          <span class="swatch-chip" style="background: linear-gradient(135deg, #fff1eb, #ace0f9);"></span>
+          <span class="swatch-title">Peach</span>
+        </div>
+        <div class="bd-swatch" data-bd="sunset" title="Twilight Sunset">
+          <span class="swatch-chip" style="background: linear-gradient(135deg, #4a154b, #b83b5e 45%, #f08a5d 80%, #ffbe76);"></span>
+          <span class="swatch-title">Sunset</span>
+        </div>
+        <div class="bd-swatch" data-bd="emerald" title="Apple Emerald Mint">
+          <span class="swatch-chip" style="background: linear-gradient(135deg, #064e3b, #059669 50%, #34d399);"></span>
+          <span class="swatch-title">Emerald</span>
+        </div>
+        <div class="bd-swatch" data-bd="slate" title="Graphite Dark Titanium">
+          <span class="swatch-chip" style="background: linear-gradient(135deg, #18181b, #27272a 60%, #09090b);"></span>
+          <span class="swatch-title">Slate</span>
+        </div>
+        <div class="bd-swatch" data-bd="frost" title="Studio Frost Silver">
+          <span class="swatch-chip" style="background: linear-gradient(135deg, #f8fafc, #e2e8f0);"></span>
+          <span class="swatch-title">Frost</span>
+        </div>
+        <div class="bd-swatch" data-bd="lilac" title="Pastel Lilac Sky">
+          <span class="swatch-chip" style="background: linear-gradient(135deg, #e0c3fc, #8ec5fc);"></span>
+          <span class="swatch-title">Lilac</span>
+        </div>
+        <div class="bd-swatch" data-bd="transparent" title="Transparent Floating Card">
+          <span class="swatch-chip checker-chip"></span>
+          <span class="swatch-title">Transp</span>
+        </div>
+      </div>
 
-    <!-- Rich Pastel Palette -->
-    <div class="tool-group color-swatch-wrap">
-      <div class="color-dot active" data-color="#ff6b6b" style="background: #ff6b6b;" title="Pastel Coral"></div>
-      <div class="color-dot" data-color="#ffa94d" style="background: #ffa94d;" title="Pastel Peach"></div>
-      <div class="color-dot" data-color="#4dabf7" style="background: #4dabf7;" title="Pastel Soft Sky"></div>
-      <div class="color-dot" data-color="#38d9a9" style="background: #38d9a9;" title="Pastel Fresh Mint"></div>
-      <div class="color-dot" data-color="#da77f2" style="background: #da77f2;" title="Pastel Lavender"></div>
-      <div class="color-dot" data-color="#ffffff" style="background: #ffffff;" title="Frost White"></div>
-      <div class="color-dot" data-color="#343a40" style="background: #343a40; border: 1px solid rgba(255,255,255,0.35);" title="Matte Slate"></div>
-    </div>
+      <div class="panel-divider"></div>
 
-    <!-- Stroke width -->
-    <div class="tool-group">
-      <button class="tool-btn" id="stroke-thin" title="Thin Stroke (2.5px)" style="font-size: 11px;">1x</button>
-      <button class="tool-btn active" id="stroke-medium" title="Medium Stroke (4.5px)" style="font-size: 13px; font-weight: bold;">2x</button>
-      <button class="tool-btn" id="stroke-thick" title="Thick Stroke (7px)" style="font-size: 15px; font-weight: 900;">3x</button>
-    </div>
-
-    <!-- Studio Framing & Backdrop -->
-    <div class="tool-group" id="backdrop-group">
-      <button class="tool-btn active backdrop-btn" data-backdrop="none" title="Raw Screenshot (No Frame)">
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" stroke-dasharray="3 3"/></svg>
-      </button>
-      <button class="tool-btn backdrop-btn" data-backdrop="sunset" title="Sunset Studio Frame">
-        <span class="backdrop-preview" style="background: linear-gradient(135deg, #f093fb, #f5576c);"></span>
-      </button>
-      <button class="tool-btn backdrop-btn" data-backdrop="ocean" title="Ocean Sky Frame">
-        <span class="backdrop-preview" style="background: linear-gradient(135deg, #4facfe, #00f2fe);"></span>
-      </button>
-      <button class="tool-btn backdrop-btn" data-backdrop="obsidian" title="Obsidian Matte Dark Frame">
-        <span class="backdrop-preview" style="background: linear-gradient(135deg, #27272a, #09090b);"></span>
-      </button>
-      <button class="tool-btn backdrop-btn" data-backdrop="aurora" title="Aurora Pastel Frame">
-        <span class="backdrop-preview" style="background: linear-gradient(135deg, #d299c2, #fef9d7);"></span>
-      </button>
-    </div>
-
-    <!-- Actions -->
-    <div class="tool-group" style="border-right: none; padding-left: 6px;">
-      <button class="tool-btn" id="btn-undo" title="Undo (Ctrl+Z)">
-        <svg viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
-      </button>
-      <button class="action-btn" id="btn-save" title="Save to File (Ctrl+S)">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-        Save
-      </button>
-      <button class="action-btn primary" id="btn-copy" title="Copy to Clipboard & Close (Ctrl+C / Enter)">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        Copy
-      </button>
+      <div class="controls-col">
+        <div class="control-row">
+          <span class="control-title">Padding</span>
+          <div class="slider-group">
+            <button class="pill-btn" data-type="pad" data-val="16">16</button>
+            <button class="pill-btn active" data-type="pad" data-val="24">24</button>
+            <button class="pill-btn" data-type="pad" data-val="48">48</button>
+            <input type="range" id="slider-padding" min="0" max="80" value="24" class="studio-slider">
+            <span class="val-badge" id="val-padding">24px</span>
+          </div>
+        </div>
+        <div class="control-row">
+          <span class="control-title">Inner Round</span>
+          <div class="slider-group">
+            <button class="pill-btn" data-type="inner" data-val="0">0</button>
+            <button class="pill-btn active" data-type="inner" data-val="14">14</button>
+            <button class="pill-btn" data-type="inner" data-val="22">22</button>
+            <input type="range" id="slider-inner-radius" min="0" max="36" value="14" class="studio-slider">
+            <span class="val-badge" id="val-inner-radius">14px</span>
+          </div>
+        </div>
+        <div class="control-row">
+          <span class="control-title">Outer Round</span>
+          <div class="slider-group">
+            <button class="pill-btn" data-type="outer" data-val="0">0</button>
+            <button class="pill-btn active" data-type="outer" data-val="16">16</button>
+            <button class="pill-btn" data-type="outer" data-val="24">24</button>
+            <input type="range" id="slider-outer-radius" min="0" max="36" value="16" class="studio-slider">
+            <span class="val-badge" id="val-outer-radius">16px</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

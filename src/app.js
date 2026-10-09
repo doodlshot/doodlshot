@@ -39,7 +39,93 @@ let lastClickTime = 0;
 let lastClickPos = null;
 
 // Studio Framing Backdrop State
-let activeBackdrop = 'none'; // 'none', 'sunset', 'ocean', 'obsidian', 'aurora'
+let activeBackdrop = 'none'; // 'none', 'sonoma', 'monterey', 'peach', 'sunset', 'emerald', 'slate', 'frost', 'lilac', 'transparent'
+let backdropPadding = 24;    // default 24px
+let backdropRadius = 14;     // inner screenshot radius
+let outerFrameRadius = 16;   // outer whole image radius
+let isBackdropPanelOpen = false;
+
+function getBackdropPad() {
+  return activeBackdrop !== 'none' ? backdropPadding : 0;
+}
+
+function toggleBackdropPanel(forceOpen = null) {
+  const panel = document.getElementById('backdrop-panel');
+  const btn = document.getElementById('btn-backdrop-toggle');
+  if (!panel) return;
+
+  if (forceOpen !== null) {
+    isBackdropPanelOpen = forceOpen;
+  } else {
+    isBackdropPanelOpen = !isBackdropPanelOpen;
+  }
+
+  if (isBackdropPanelOpen) {
+    panel.classList.remove('backdrop-panel-collapsed');
+    if (btn) btn.classList.add('active');
+    if (activeBackdrop === 'none') {
+      selectBackdropSwatch('sonoma');
+    }
+  } else {
+    panel.classList.add('backdrop-panel-collapsed');
+    if (btn) {
+      if (activeBackdrop !== 'none') btn.classList.add('active');
+      else btn.classList.remove('active');
+    }
+  }
+}
+
+function selectBackdropSwatch(name) {
+  activeBackdrop = name;
+  document.querySelectorAll('.bd-swatch').forEach(sw => {
+    if (sw.dataset.bd === name) sw.classList.add('active');
+    else sw.classList.remove('active');
+  });
+  const btn = document.getElementById('btn-backdrop-toggle');
+  if (btn) {
+    if (activeBackdrop !== 'none' || isBackdropPanelOpen) btn.classList.add('active');
+    else btn.classList.remove('active');
+  }
+  resizeCanvasForBackdrop();
+  redraw();
+}
+
+function setBackdropPadding(val) {
+  backdropPadding = Math.max(0, Math.min(80, parseInt(val, 10) || 0));
+  const slider = document.getElementById('slider-padding');
+  const badge = document.getElementById('val-padding');
+  if (slider) slider.value = backdropPadding;
+  if (badge) badge.textContent = `${backdropPadding}px`;
+  document.querySelectorAll('.pill-btn[data-type="pad"]').forEach(p => {
+    p.classList.toggle('active', parseInt(p.dataset.val, 10) === backdropPadding);
+  });
+  resizeCanvasForBackdrop();
+  redraw();
+}
+
+function setInnerRadius(val) {
+  backdropRadius = Math.max(0, Math.min(36, parseInt(val, 10) || 0));
+  const slider = document.getElementById('slider-inner-radius');
+  const badge = document.getElementById('val-inner-radius');
+  if (slider) slider.value = backdropRadius;
+  if (badge) badge.textContent = `${backdropRadius}px`;
+  document.querySelectorAll('.pill-btn[data-type="inner"]').forEach(p => {
+    p.classList.toggle('active', parseInt(p.dataset.val, 10) === backdropRadius);
+  });
+  redraw();
+}
+
+function setOuterRadius(val) {
+  outerFrameRadius = Math.max(0, Math.min(36, parseInt(val, 10) || 0));
+  const slider = document.getElementById('slider-outer-radius');
+  const badge = document.getElementById('val-outer-radius');
+  if (slider) slider.value = outerFrameRadius;
+  if (badge) badge.textContent = `${outerFrameRadius}px`;
+  document.querySelectorAll('.pill-btn[data-type="outer"]').forEach(p => {
+    p.classList.toggle('active', parseInt(p.dataset.val, 10) === outerFrameRadius);
+  });
+  redraw();
+}
 
 // Tool names for badge
 const toolLabels = {
@@ -77,14 +163,49 @@ function initUI() {
   });
 
   // Studio Framing Backdrop listeners
-  document.querySelectorAll('.backdrop-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+  const bdToggleBtn = document.getElementById('btn-backdrop-toggle');
+  if (bdToggleBtn) {
+    bdToggleBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      document.querySelectorAll('.backdrop-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeBackdrop = btn.dataset.backdrop || 'none';
-      resizeCanvasForBackdrop();
-      redraw();
+      toggleBackdropPanel();
+    });
+  }
+
+  document.querySelectorAll('.bd-swatch').forEach(sw => {
+    sw.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const name = sw.dataset.bd || 'none';
+      selectBackdropSwatch(name);
+    });
+  });
+
+  const sliderPad = document.getElementById('slider-padding');
+  if (sliderPad) {
+    sliderPad.addEventListener('input', (e) => {
+      setBackdropPadding(e.target.value);
+    });
+  }
+  const sliderInner = document.getElementById('slider-inner-radius');
+  if (sliderInner) {
+    sliderInner.addEventListener('input', (e) => {
+      setInnerRadius(e.target.value);
+    });
+  }
+  const sliderOuter = document.getElementById('slider-outer-radius');
+  if (sliderOuter) {
+    sliderOuter.addEventListener('input', (e) => {
+      setOuterRadius(e.target.value);
+    });
+  }
+
+  document.querySelectorAll('.pill-btn').forEach(pill => {
+    pill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const type = pill.dataset.type;
+      const val = parseInt(pill.dataset.val, 10);
+      if (type === 'pad') setBackdropPadding(val);
+      else if (type === 'inner') setInnerRadius(val);
+      else if (type === 'outer') setOuterRadius(val);
     });
   });
 
@@ -187,10 +308,18 @@ function setTool(tool) {
 }
 
 function resizeCanvasForBackdrop() {
-  const pad = activeBackdrop !== 'none' ? 44 : 0;
+  const pad = getBackdropPad();
   canvas.width = imageWidth + pad * 2;
   canvas.height = imageHeight + pad * 2;
-  badgeDims.textContent = `${imageWidth} × ${imageHeight}`;
+  badgeDims.textContent = `${canvas.width} × ${canvas.height}`;
+  const wrapper = document.getElementById('canvas-wrapper');
+  if (wrapper) {
+    if (activeBackdrop !== 'none') {
+      wrapper.classList.add('has-backdrop');
+    } else {
+      wrapper.classList.remove('has-backdrop');
+    }
+  }
 }
 
 function loadImage() {
@@ -259,7 +388,7 @@ function getCanvasPos(e) {
   const scaleY = canvas.height / rect.height;
   const rawX = (e.clientX - rect.left) * scaleX;
   const rawY = (e.clientY - rect.top) * scaleY;
-  const pad = activeBackdrop !== 'none' ? 44 : 0;
+  const pad = getBackdropPad();
   return {
     x: rawX - pad,
     y: rawY - pad
@@ -686,57 +815,126 @@ function onPointerUp(e) {
       selectedAnnotation = currentAnnotation;
     }
     currentAnnotation = null;
-    redraw();
   }
+
+  // If existing redaction was moved, re-bake it at its new position
+  if (selectedAnnotation && ['pixelate', 'blur', 'erase'].includes(selectedAnnotation.type)) {
+    if (selectedAnnotation.type === 'blur') selectedAnnotation.baked = bakeBlur(selectedAnnotation);
+    else if (selectedAnnotation.type === 'erase') selectedAnnotation.baked = bakeErase(selectedAnnotation);
+    else selectedAnnotation.baked = bakePixelate(selectedAnnotation);
+  }
+
+  redraw();
 }
 
 // ----------------------------------------------------
 // Rendering Engine (Shottr Pixel-Exact Style)
 // ----------------------------------------------------
 
+function drawBackdropGradient(ctx, w, h, name) {
+  const grad = ctx.createLinearGradient(0, 0, w, h);
+  if (name === 'sonoma') {
+    grad.addColorStop(0, '#1e1b4b');
+    grad.addColorStop(0.4, '#4338ca');
+    grad.addColorStop(0.75, '#7c3aed');
+    grad.addColorStop(1, '#db2777');
+  } else if (name === 'monterey') {
+    grad.addColorStop(0, '#0f172a');
+    grad.addColorStop(0.45, '#1e3a8a');
+    grad.addColorStop(0.8, '#0284c7');
+    grad.addColorStop(1, '#38bdf8');
+  } else if (name === 'peach') {
+    grad.addColorStop(0, '#fff1eb');
+    grad.addColorStop(1, '#ace0f9');
+  } else if (name === 'sunset') {
+    grad.addColorStop(0, '#4a154b');
+    grad.addColorStop(0.45, '#b83b5e');
+    grad.addColorStop(0.8, '#f08a5d');
+    grad.addColorStop(1, '#ffbe76');
+  } else if (name === 'emerald') {
+    grad.addColorStop(0, '#064e3b');
+    grad.addColorStop(0.5, '#059669');
+    grad.addColorStop(1, '#34d399');
+  } else if (name === 'slate') {
+    grad.addColorStop(0, '#18181b');
+    grad.addColorStop(0.6, '#27272a');
+    grad.addColorStop(1, '#09090b');
+  } else if (name === 'frost') {
+    grad.addColorStop(0, '#f8fafc');
+    grad.addColorStop(1, '#e2e8f0');
+  } else if (name === 'lilac') {
+    grad.addColorStop(0, '#e0c3fc');
+    grad.addColorStop(1, '#8ec5fc');
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+}
+
 function redraw(includeHandles = true) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  const pad = activeBackdrop !== 'none' ? 44 : 0;
+  const pad = getBackdropPad();
 
   // 1. If Studio Framing Backdrop is active, draw gradient background & drop shadow
   if (activeBackdrop !== 'none') {
-    const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-    if (activeBackdrop === 'sunset') {
-      grad.addColorStop(0, '#f093fb');
-      grad.addColorStop(1, '#f5576c');
-    } else if (activeBackdrop === 'ocean') {
-      grad.addColorStop(0, '#4facfe');
-      grad.addColorStop(1, '#00f2fe');
-    } else if (activeBackdrop === 'obsidian') {
-      grad.addColorStop(0, '#27272a');
-      grad.addColorStop(1, '#09090b');
-    } else if (activeBackdrop === 'aurora') {
-      grad.addColorStop(0, '#d299c2');
-      grad.addColorStop(1, '#fef9d7');
-    }
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Soft 3D drop shadow
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.42)';
-    ctx.shadowBlur = 32;
-    ctx.shadowOffsetY = 16;
-    ctx.beginPath();
-    ctx.roundRect(pad, pad, imageWidth, imageHeight, 14);
-    ctx.fillStyle = '#000000';
-    ctx.fill();
+    if (outerFrameRadius > 0) {
+      ctx.beginPath();
+      ctx.roundRect(0, 0, canvas.width, canvas.height, outerFrameRadius);
+      ctx.clip();
+    }
+
+    if (activeBackdrop !== 'transparent') {
+      drawBackdropGradient(ctx, canvas.width, canvas.height, activeBackdrop);
+    }
+
+    if (outerFrameRadius > 0 && activeBackdrop !== 'transparent') {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(0, 0, canvas.width, canvas.height, outerFrameRadius);
+      ctx.stroke();
+    }
     ctx.restore();
+
+    // High-end multi-layer macOS drop shadow
+    if (pad > 0) {
+      // Layer 1: Ambient contact shadow
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.18)';
+      ctx.shadowBlur = Math.min(10, pad * 0.4);
+      ctx.shadowOffsetY = 2;
+      ctx.beginPath();
+      ctx.roundRect(pad, pad, imageWidth, imageHeight, backdropRadius);
+      ctx.fillStyle = '#000000';
+      ctx.fill();
+      ctx.restore();
+
+      // Layer 2: Deep atmospheric directional shadow
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.32)';
+      ctx.shadowBlur = Math.min(32, pad * 1.1);
+      ctx.shadowOffsetY = Math.min(16, pad * 0.6);
+      ctx.beginPath();
+      ctx.roundRect(pad, pad, imageWidth, imageHeight, backdropRadius);
+      ctx.fillStyle = '#000000';
+      ctx.fill();
+      ctx.restore();
+    }
   }
 
   ctx.save();
   if (activeBackdrop !== 'none') {
     // Clip screenshot to rounded rect and translate
     ctx.beginPath();
-    ctx.roundRect(pad, pad, imageWidth, imageHeight, 14);
+    ctx.roundRect(pad, pad, imageWidth, imageHeight, backdropRadius);
     ctx.clip();
     ctx.translate(pad, pad);
+  } else if (outerFrameRadius > 0) {
+    // Round outer screenshot even when no backdrop
+    ctx.beginPath();
+    ctx.roundRect(0, 0, canvas.width, canvas.height, outerFrameRadius);
+    ctx.clip();
   }
 
   // Draw base screenshot
@@ -761,7 +959,16 @@ function redraw(includeHandles = true) {
 
   // Active drawing preview
   if (currentAnnotation && isDrawing) {
-    if (['pixelate', 'blur', 'erase'].includes(currentAnnotation.type)) {
+    if (currentAnnotation.type === 'blur') {
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+      ctx.fillRect(currentAnnotation.x, currentAnnotation.y, currentAnnotation.w, currentAnnotation.h);
+      ctx.strokeStyle = '#4dabf7';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(currentAnnotation.x, currentAnnotation.y, currentAnnotation.w, currentAnnotation.h);
+      ctx.restore();
+    } else if (['pixelate', 'erase'].includes(currentAnnotation.type)) {
       renderRedaction(currentAnnotation);
     } else if (currentAnnotation.type === 'spotlight') {
       renderSpotlightsLayer(currentAnnotation);
@@ -789,13 +996,21 @@ function redraw(includeHandles = true) {
 
   ctx.restore();
 
-  // Draw subtle outer border around rounded screenshot frame
+  // Draw subtle highlight border around rounded screenshot frame
   if (activeBackdrop !== 'none') {
     ctx.save();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(pad, pad, imageWidth, imageHeight, 14);
+    ctx.roundRect(pad, pad, imageWidth, imageHeight, backdropRadius);
+    ctx.stroke();
+    ctx.restore();
+  } else if (outerFrameRadius > 0) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(0, 0, canvas.width, canvas.height, outerFrameRadius);
     ctx.stroke();
     ctx.restore();
   }
@@ -1163,9 +1378,7 @@ function applyCrop(x, y, w, h) {
   baseImage.onload = () => {
     imageWidth = w;
     imageHeight = h;
-    canvas.width = w;
-    canvas.height = h;
-    badgeDims.textContent = `${w} × ${h}`;
+    resizeCanvasForBackdrop();
 
     annotations.forEach(a => {
       if (a.p0) {
@@ -1234,6 +1447,87 @@ function bakePixelate(a) {
   return { off, sx, sy, sw, sh };
 }
 
+// High-fidelity 3-Pass Gaussian Blur (Central Limit Theorem)
+function boxBlurH(scl, tcl, w, h, r) {
+  const iarr = 1 / (r + r + 1);
+  for (let i = 0; i < h; i++) {
+    let ti = i * w * 4;
+    let li = ti;
+    let ri = ti + r * 4;
+    let fv_r = scl[ti], fv_g = scl[ti + 1], fv_b = scl[ti + 2], fv_a = scl[ti + 3];
+    let lv_r = scl[ti + (w - 1) * 4], lv_g = scl[ti + (w - 1) * 4 + 1], lv_b = scl[ti + (w - 1) * 4 + 2], lv_a = scl[ti + (w - 1) * 4 + 3];
+    let val_r = (r + 1) * fv_r, val_g = (r + 1) * fv_g, val_b = (r + 1) * fv_b, val_a = (r + 1) * fv_a;
+    for (let j = 0; j < r; j++) {
+      val_r += scl[ti + j * 4]; val_g += scl[ti + j * 4 + 1]; val_b += scl[ti + j * 4 + 2]; val_a += scl[ti + j * 4 + 3];
+    }
+    for (let j = 0; j <= r; j++) {
+      val_r += scl[ri] - fv_r; val_g += scl[ri + 1] - fv_g; val_b += scl[ri + 2] - fv_b; val_a += scl[ri + 3] - fv_a;
+      ri += 4;
+      tcl[ti] = Math.round(val_r * iarr); tcl[ti + 1] = Math.round(val_g * iarr); tcl[ti + 2] = Math.round(val_b * iarr); tcl[ti + 3] = Math.round(val_a * iarr);
+      ti += 4;
+    }
+    for (let j = r + 1; j < w - r; j++) {
+      val_r += scl[ri] - scl[li]; val_g += scl[ri + 1] - scl[li + 1]; val_b += scl[ri + 2] - scl[li + 2]; val_a += scl[ri + 3] - scl[li + 3];
+      ri += 4; li += 4;
+      tcl[ti] = Math.round(val_r * iarr); tcl[ti + 1] = Math.round(val_g * iarr); tcl[ti + 2] = Math.round(val_b * iarr); tcl[ti + 3] = Math.round(val_a * iarr);
+      ti += 4;
+    }
+    for (let j = w - r; j < w; j++) {
+      val_r += lv_r - scl[li]; val_g += lv_g - scl[li + 1]; val_b += lv_b - scl[li + 2]; val_a += lv_a - scl[li + 3];
+      li += 4;
+      tcl[ti] = Math.round(val_r * iarr); tcl[ti + 1] = Math.round(val_g * iarr); tcl[ti + 2] = Math.round(val_b * iarr); tcl[ti + 3] = Math.round(val_a * iarr);
+      ti += 4;
+    }
+  }
+}
+
+function boxBlurT(scl, tcl, w, h, r) {
+  const iarr = 1 / (r + r + 1);
+  for (let i = 0; i < w; i++) {
+    let ti = i * 4;
+    let li = ti;
+    let ri = ti + r * w * 4;
+    let fv_r = scl[ti], fv_g = scl[ti + 1], fv_b = scl[ti + 2], fv_a = scl[ti + 3];
+    let lv_r = scl[ti + (h - 1) * w * 4], lv_g = scl[ti + (h - 1) * w * 4 + 1], lv_b = scl[ti + (h - 1) * w * 4 + 2], lv_a = scl[ti + (h - 1) * w * 4 + 3];
+    let val_r = (r + 1) * fv_r, val_g = (r + 1) * fv_g, val_b = (r + 1) * fv_b, val_a = (r + 1) * fv_a;
+    for (let j = 0; j < r; j++) {
+      val_r += scl[ti + j * w * 4]; val_g += scl[ti + j * w * 4 + 1]; val_b += scl[ti + j * w * 4 + 2]; val_a += scl[ti + j * w * 4 + 3];
+    }
+    for (let j = 0; j <= r; j++) {
+      val_r += scl[ri] - fv_r; val_g += scl[ri + 1] - fv_g; val_b += scl[ri + 2] - fv_b; val_a += scl[ri + 3] - fv_a;
+      ri += w * 4;
+      tcl[ti] = Math.round(val_r * iarr); tcl[ti + 1] = Math.round(val_g * iarr); tcl[ti + 2] = Math.round(val_b * iarr); tcl[ti + 3] = Math.round(val_a * iarr);
+      ti += w * 4;
+    }
+    for (let j = r + 1; j < h - r; j++) {
+      val_r += scl[ri] - scl[li]; val_g += scl[ri + 1] - scl[li + 1]; val_b += scl[ri + 2] - scl[li + 2]; val_a += scl[ri + 3] - scl[li + 3];
+      ri += w * 4; li += w * 4;
+      tcl[ti] = Math.round(val_r * iarr); tcl[ti + 1] = Math.round(val_g * iarr); tcl[ti + 2] = Math.round(val_b * iarr); tcl[ti + 3] = Math.round(val_a * iarr);
+      ti += w * 4;
+    }
+    for (let j = h - r; j < h; j++) {
+      val_r += lv_r - scl[li]; val_g += lv_g - scl[li + 1]; val_b += lv_b - scl[li + 2]; val_a += lv_a - scl[li + 3];
+      li += w * 4;
+      tcl[ti] = Math.round(val_r * iarr); tcl[ti + 1] = Math.round(val_g * iarr); tcl[ti + 2] = Math.round(val_b * iarr); tcl[ti + 3] = Math.round(val_a * iarr);
+      ti += w * 4;
+    }
+  }
+}
+
+function gaussianBlurImageData(imgData, radius) {
+  const w = imgData.width;
+  const h = imgData.height;
+  const src = imgData.data;
+  const tmp = new Uint8ClampedArray(src.length);
+  const r = Math.max(1, Math.round(radius));
+  boxBlurH(src, tmp, w, h, r);
+  boxBlurT(tmp, src, w, h, r);
+  boxBlurH(src, tmp, w, h, r);
+  boxBlurT(tmp, src, w, h, r);
+  boxBlurH(src, tmp, w, h, r);
+  boxBlurT(tmp, src, w, h, r);
+}
+
 function bakeBlur(a) {
   if (!baseImage) return null;
   const sx = Math.max(0, Math.floor(a.x));
@@ -1242,27 +1536,37 @@ function bakeBlur(a) {
   const sh = Math.min(imageHeight - sy, Math.floor(a.h));
   if (sw < 4 || sh < 4) return null;
 
-  const off = document.createElement('canvas');
-  off.width = sw;
-  off.height = sh;
-  const octx = off.getContext('2d');
+  // Seamless boundary margin so diffusion naturally samples surrounding context
+  const margin = 16;
+  const x0 = Math.max(0, sx - margin);
+  const y0 = Math.max(0, sy - margin);
+  const x1 = Math.min(imageWidth, sx + sw + margin);
+  const y1 = Math.min(imageHeight, sy + sh + margin);
+  const pw = x1 - x0;
+  const ph = y1 - y0;
+  if (pw < 4 || ph < 4) return null;
 
-  // Smooth multi-pass downsample blur
-  const lowW = Math.max(3, Math.floor(sw / 8));
-  const lowH = Math.max(3, Math.floor(sh / 8));
-  const temp = document.createElement('canvas');
-  temp.width = lowW;
-  temp.height = lowH;
-  const tctx = temp.getContext('2d');
-  tctx.imageSmoothingEnabled = true;
-  tctx.imageSmoothingQuality = 'high';
-  tctx.drawImage(baseImage, sx, sy, sw, sh, 0, 0, lowW, lowH);
+  const tempSource = document.createElement('canvas');
+  tempSource.width = pw;
+  tempSource.height = ph;
+  const sctx = tempSource.getContext('2d');
+  sctx.drawImage(baseImage, x0, y0, pw, ph, 0, 0, pw, ph);
 
-  octx.imageSmoothingEnabled = true;
-  octx.imageSmoothingQuality = 'high';
-  octx.drawImage(temp, 0, 0, lowW, lowH, 0, 0, sw, sh);
+  try {
+    const imgData = sctx.getImageData(0, 0, pw, ph);
+    gaussianBlurImageData(imgData, 12);
+    sctx.putImageData(imgData, 0, 0);
 
-  return { off, sx, sy, sw, sh };
+    const off = document.createElement('canvas');
+    off.width = sw;
+    off.height = sh;
+    const octx = off.getContext('2d');
+    octx.drawImage(tempSource, sx - x0, sy - y0, sw, sh, 0, 0, sw, sh);
+    return { off, sx, sy, sw, sh };
+  } catch (err) {
+    console.error("Gaussian blur bake error:", err);
+    return null;
+  }
 }
 
 function bakeErase(a) {
@@ -1486,9 +1790,10 @@ function spawnTextInput(x, y) {
   editingAnnotation = null;
   const rect = canvas.getBoundingClientRect();
   const scale = rect.width / canvas.width;
+  const pad = getBackdropPad();
 
-  textEditor.style.left = `${x * scale}px`;
-  textEditor.style.top = `${y * scale}px`;
+  textEditor.style.left = `${(x + pad) * scale}px`;
+  textEditor.style.top = `${(y + pad) * scale}px`;
   textEditor.style.fontSize = `${32 * scale}px`;
   textEditor.style.color = activeColor;
   textEditor.style.width = '140px';
@@ -1503,9 +1808,10 @@ function editExistingText(anno) {
   activeTextPos = { x: anno.x, y: anno.y };
   const rect = canvas.getBoundingClientRect();
   const scale = rect.width / canvas.width;
+  const pad = getBackdropPad();
 
-  textEditor.style.left = `${anno.x * scale}px`;
-  textEditor.style.top = `${anno.y * scale}px`;
+  textEditor.style.left = `${(anno.x + pad) * scale}px`;
+  textEditor.style.top = `${(anno.y + pad) * scale}px`;
   textEditor.style.fontSize = `${(anno.fontSize || 32) * scale}px`;
   textEditor.style.color = anno.color;
   textEditor.style.display = 'block';
@@ -1655,7 +1961,7 @@ function handleKeyDown(e) {
   } else if (e.key.toLowerCase() === 'e') {
     setTool('erase');
   } else if (e.key.toLowerCase() === 'f') {
-    cycleBackdrop();
+    toggleBackdropPanel();
   } else if (e.key.toLowerCase() === 'v') {
     setTool('select');
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
