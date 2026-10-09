@@ -1,4 +1,4 @@
-// Doodlshot Core Canvas Engine - Feature Complete & Refined
+// Doodlshot Core Canvas Engine - Premium Pastel, Callout Pointers & Precision Editing
 
 const canvas = document.getElementById('editor-canvas');
 const ctx = canvas.getContext('2d');
@@ -15,7 +15,7 @@ let imageHeight = 600;
 let annotations = [];
 let history = [];
 let activeTool = 'arrow';
-let activeColor = '#ff453a'; // Apple Coral Red default
+let activeColor = '#ff6b6b'; // Rich Pastel Coral default
 let activeWidth = 4.5;
 let activeRoughness = 1.2;
 let stepCounter = 1;
@@ -26,7 +26,7 @@ let moveOffset = { x: 0, y: 0 };
 let pointerDownPos = null;
 let currentAnnotation = null;
 let selectedAnnotation = null;
-let activeHandle = null; // 'p0', 'p1', 'p2' for bendable arrow
+let activeHandle = null; // 'p0', 'p1', 'p2', 'tip'
 
 // Double click tracker
 let lastClickTime = 0;
@@ -38,8 +38,8 @@ const toolLabels = {
   arrow: 'Bendable Arrow',
   oval: 'Hand-drawn Oval',
   rect: 'Hand-drawn Rectangle',
-  cloud: 'Puffy Cloud',
-  step: 'Step Badge (1, 2, 3...)',
+  cloud: 'Callout Cloud',
+  step: 'Step Badge (with Pointer)',
   highlighter: 'Highlighter',
   magnifier: 'Magnifier Loupe',
   pen: 'Freehand Pen',
@@ -195,7 +195,7 @@ function createMockScreenshot() {
   octx.fill();
   octx.stroke();
 
-  const dots = ['#ff5f56', '#ffbd2e', '#27c93f'];
+  const dots = ['#ff6b6b', '#ffa94d', '#38d9a9'];
   dots.forEach((c, idx) => {
     octx.beginPath();
     octx.arc(110 + idx * 20, 110, 6, 0, Math.PI * 2);
@@ -203,15 +203,15 @@ function createMockScreenshot() {
     octx.fill();
   });
 
-  octx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+  octx.fillStyle = 'rgba(255, 255, 255, 0.85)';
   octx.font = 'bold 24px "Noteworthy", -apple-system, sans-serif';
   octx.fillText('Doodlshot Canvas Ready', 110, 190);
   octx.font = '16px -apple-system, sans-serif';
   octx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-  octx.fillText('• Crisp, sharp hand-drawn arrows with smooth curve physics', 110, 230);
-  octx.fillText('• Authentic Noteworthy-Bold typography matching Shottr', 110, 260);
-  octx.fillText('• Puffy callout clouds, numbered step badges, and magnifier loupe', 110, 290);
-  octx.fillText('• Press Ctrl+C or Copy to send straight to clipboard', 110, 320);
+  octx.fillText('• Step badges & clouds now have aimable callout pointers', 110, 230);
+  octx.fillText('• Double-click anywhere on text to edit it in place', 110, 260);
+  octx.fillText('• Bulletproof pixelation that never disappears on release', 110, 290);
+  octx.fillText('• Clean solid line on magnifier loupe & rich pastel palette', 110, 320);
 
   baseImage.src = offscreen.toDataURL('image/png');
 }
@@ -241,9 +241,20 @@ function onPointerDown(e) {
     return;
   }
 
-  // Double Click Check -> Edit Existing Text
-  if (now - lastClickTime < 350 && lastClickPos && Math.hypot(pos.x - lastClickPos.x, pos.y - lastClickPos.y) < 15) {
-    const hitText = annotations.find(a => a.type === 'text' && Math.hypot(pos.x - a.x, pos.y - a.y) < 40);
+  // Double Click Check -> Edit Existing Text (Hit-test across entire text bounding box!)
+  if (now - lastClickTime < 350) {
+    const hitText = annotations.find(a => {
+      if (a.type !== 'text') return false;
+      const lines = a.text.split('\n');
+      const fontSize = a.fontSize || 32;
+      let maxLen = 0;
+      lines.forEach(l => { if (l.length > maxLen) maxLen = l.length; });
+      const w = Math.max(50, maxLen * fontSize * 0.6);
+      const h = Math.max(30, lines.length * fontSize * 1.25);
+      return pos.x >= a.x - 8 && pos.x <= a.x + w + 8 &&
+             pos.y >= a.y - 8 && pos.y <= a.y + h + 8;
+    });
+
     if (hitText) {
       editExistingText(hitText);
       return;
@@ -252,13 +263,23 @@ function onPointerDown(e) {
   lastClickTime = now;
   lastClickPos = pos;
 
-  // If clicking near a handle of selected arrow
-  if (selectedAnnotation && selectedAnnotation.type === 'arrow') {
-    const handle = hitTestArrowHandles(selectedAnnotation, pos);
-    if (handle) {
-      activeHandle = handle;
-      isDrawing = true;
-      return;
+  // Handle pointer tips and arrow handles
+  if (selectedAnnotation) {
+    if (selectedAnnotation.type === 'arrow') {
+      const handle = hitTestArrowHandles(selectedAnnotation, pos);
+      if (handle) {
+        activeHandle = handle;
+        isDrawing = true;
+        return;
+      }
+    } else if (selectedAnnotation.type === 'step' || selectedAnnotation.type === 'cloud') {
+      if (selectedAnnotation.tipX !== undefined) {
+        if (Math.hypot(pos.x - selectedAnnotation.tipX, pos.y - selectedAnnotation.tipY) < 18) {
+          activeHandle = 'tip';
+          isDrawing = true;
+          return;
+        }
+      }
     }
   }
 
@@ -275,6 +296,8 @@ function onPointerDown(e) {
           isMoving = true;
           moveOffset = { x: pos.x - selectedAnnotation.p0.x, y: pos.y - selectedAnnotation.p0.y };
         }
+      } else if ((selectedAnnotation.type === 'step' || selectedAnnotation.type === 'cloud') && Math.hypot(pos.x - selectedAnnotation.tipX, pos.y - selectedAnnotation.tipY) < 18) {
+        activeHandle = 'tip';
       } else {
         isMoving = true;
         moveOffset = { x: pos.x - (selectedAnnotation.x || selectedAnnotation.cx || 0), y: pos.y - (selectedAnnotation.y || selectedAnnotation.cy || 0) };
@@ -285,16 +308,18 @@ function onPointerDown(e) {
     return;
   }
 
-  // Step Badge (1, 2, 3...)
+  // Step Badge (with aimable pointer tip!)
   if (activeTool === 'step') {
     saveHistoryState();
     const badge = {
       type: 'step',
       x: pos.x,
       y: pos.y,
+      tipX: pos.x,
+      tipY: pos.y + 32, // Points downward by default
       number: stepCounter++,
       color: activeColor,
-      radius: 16
+      radius: 17
     };
     annotations.push(badge);
     selectedAnnotation = badge;
@@ -363,6 +388,8 @@ function onPointerDown(e) {
       y: pos.y,
       w: 0,
       h: 0,
+      tipX: pos.x,
+      tipY: pos.y + 40,
       color: activeColor,
       width: activeWidth,
       roughness: activeRoughness,
@@ -410,7 +437,8 @@ function onPointerDown(e) {
       y: pos.y,
       w: 0,
       h: 0,
-      blockSize: 12
+      blockSize: 12,
+      baked: null
     };
   } else if (activeTool === 'crop') {
     currentAnnotation = {
@@ -443,6 +471,15 @@ function onPointerMove(e) {
     return;
   }
 
+  // Moving tip of step badge or cloud
+  if (selectedAnnotation && activeHandle === 'tip') {
+    selectedAnnotation.tipX = pos.x;
+    selectedAnnotation.tipY = pos.y;
+    selectedAnnotation.drawable = null;
+    redraw();
+    return;
+  }
+
   // Moving entire annotation
   if (isMoving && selectedAnnotation) {
     if (selectedAnnotation.type === 'arrow') {
@@ -454,12 +491,24 @@ function onPointerMove(e) {
       selectedAnnotation.p1.y += dy;
       selectedAnnotation.p2.x += dx;
       selectedAnnotation.p2.y += dy;
-    } else if (selectedAnnotation.x !== undefined) {
-      selectedAnnotation.x = pos.x - moveOffset.x;
-      selectedAnnotation.y = pos.y - moveOffset.y;
-    } else if (selectedAnnotation.cx !== undefined) {
-      selectedAnnotation.cx = pos.x - moveOffset.x;
-      selectedAnnotation.cy = pos.y - moveOffset.y;
+    } else {
+      const origX = selectedAnnotation.x !== undefined ? selectedAnnotation.x : selectedAnnotation.cx;
+      const origY = selectedAnnotation.y !== undefined ? selectedAnnotation.y : selectedAnnotation.cy;
+      const dx = pos.x - origX - moveOffset.x;
+      const dy = pos.y - origY - moveOffset.y;
+
+      if (selectedAnnotation.x !== undefined) selectedAnnotation.x += dx;
+      if (selectedAnnotation.y !== undefined) selectedAnnotation.y += dy;
+      if (selectedAnnotation.cx !== undefined) selectedAnnotation.cx += dx;
+      if (selectedAnnotation.cy !== undefined) selectedAnnotation.cy += dy;
+      if (selectedAnnotation.tipX !== undefined) selectedAnnotation.tipX += dx;
+      if (selectedAnnotation.tipY !== undefined) selectedAnnotation.tipY += dy;
+      if (selectedAnnotation.sourceX !== undefined) selectedAnnotation.sourceX += dx;
+      if (selectedAnnotation.sourceY !== undefined) selectedAnnotation.sourceY += dy;
+
+      if (selectedAnnotation.type === 'pixelate') {
+        selectedAnnotation.baked = null; // re-bake at new location
+      }
     }
     selectedAnnotation.drawable = null;
     redraw();
@@ -481,12 +530,26 @@ function onPointerMove(e) {
     currentAnnotation.rx = Math.abs(pos.x - currentAnnotation.startX) / 2;
     currentAnnotation.ry = Math.abs(pos.y - currentAnnotation.startY) / 2;
     currentAnnotation.drawable = null;
-  } else if (currentAnnotation.type === 'rect' || currentAnnotation.type === 'cloud' || currentAnnotation.type === 'pixelate' || currentAnnotation.type === 'highlighter' || currentAnnotation.type === 'crop') {
+  } else if (currentAnnotation.type === 'rect' || currentAnnotation.type === 'highlighter' || currentAnnotation.type === 'crop') {
     currentAnnotation.x = Math.min(currentAnnotation.startX, pos.x);
     currentAnnotation.y = Math.min(currentAnnotation.startY, pos.y);
     currentAnnotation.w = Math.abs(pos.x - currentAnnotation.startX);
     currentAnnotation.h = Math.abs(pos.y - currentAnnotation.startY);
     currentAnnotation.drawable = null;
+  } else if (currentAnnotation.type === 'cloud') {
+    currentAnnotation.x = Math.min(currentAnnotation.startX, pos.x);
+    currentAnnotation.y = Math.min(currentAnnotation.startY, pos.y);
+    currentAnnotation.w = Math.abs(pos.x - currentAnnotation.startX);
+    currentAnnotation.h = Math.abs(pos.y - currentAnnotation.startY);
+    currentAnnotation.tipX = currentAnnotation.x + currentAnnotation.w * 0.15;
+    currentAnnotation.tipY = currentAnnotation.y + currentAnnotation.h + 24;
+    currentAnnotation.drawable = null;
+  } else if (currentAnnotation.type === 'pixelate') {
+    currentAnnotation.x = Math.min(currentAnnotation.startX, pos.x);
+    currentAnnotation.y = Math.min(currentAnnotation.startY, pos.y);
+    currentAnnotation.w = Math.abs(pos.x - currentAnnotation.startX);
+    currentAnnotation.h = Math.abs(pos.y - currentAnnotation.startY);
+    currentAnnotation.baked = null; // bake live
   } else if (currentAnnotation.type === 'magnifier') {
     currentAnnotation.x = pos.x;
     currentAnnotation.y = pos.y;
@@ -549,6 +612,12 @@ function onPointerUp(e) {
         annotations.push(currentAnnotation);
         selectedAnnotation = currentAnnotation;
       }
+    } else if (currentAnnotation.type === 'pixelate') {
+      if (currentAnnotation.w > 4 && currentAnnotation.h > 4) {
+        currentAnnotation.baked = bakePixelate(currentAnnotation);
+        annotations.push(currentAnnotation);
+        selectedAnnotation = currentAnnotation;
+      }
     } else {
       annotations.push(currentAnnotation);
       selectedAnnotation = currentAnnotation;
@@ -596,9 +665,15 @@ function redraw(includeHandles = true) {
     }
   }
 
-  // Arrow selection handles
-  if (includeHandles && selectedAnnotation && selectedAnnotation.type === 'arrow') {
-    renderArrowHandles(selectedAnnotation);
+  // Selection handles
+  if (includeHandles && selectedAnnotation) {
+    if (selectedAnnotation.type === 'arrow') {
+      renderArrowHandles(selectedAnnotation);
+    } else if (selectedAnnotation.type === 'step' || selectedAnnotation.type === 'cloud') {
+      renderPointerTipHandle(selectedAnnotation);
+    } else if (selectedAnnotation.type === 'pixelate') {
+      renderPixelateSelection(selectedAnnotation);
+    }
   }
 }
 
@@ -610,7 +685,6 @@ function renderAnnotation(a) {
   } else if (a.type === 'step') {
     renderStepBadge(a);
   } else {
-    // Cached Rough.js shapes
     const d = getCachedDrawable(a);
     if (!d) return;
     if (Array.isArray(d)) {
@@ -644,7 +718,7 @@ function renderShottrArrow(a) {
 
   // Sharp, elegant chevron wings
   const headLen = Math.max(14, width * 3.5);
-  const wingAngle = 0.46; // ~26.5 degrees (sleek & sharp!)
+  const wingAngle = 0.46;
 
   const w1x = p2.x - headLen * Math.cos(angle - wingAngle);
   const w1y = p2.y - headLen * Math.sin(angle - wingAngle);
@@ -661,15 +735,17 @@ function renderShottrArrow(a) {
   ctx.restore();
 }
 
-// ☁️ True Cartoon Puffy Callout Cloud Path
-function generateCloudPath(x, y, w, h) {
+// ☁️ Callout Cloud with Pointer Tail
+function generateCalloutCloudPath(a) {
+  const { x, y, w, h } = a;
   const cx = x + w / 2;
   const cy = y + h / 2;
   const rx = w / 2;
   const ry = h / 2;
+  const tipX = a.tipX !== undefined ? a.tipX : (x + w * 0.15);
+  const tipY = a.tipY !== undefined ? a.tipY : (y + h + 24);
 
-  // 10 puffy rounded arcs around perimeter
-  const numArcs = 10;
+  const numArcs = 9;
   const points = [];
   for (let i = 0; i <= numArcs; i++) {
     const th = (i / numArcs) * Math.PI * 2;
@@ -681,15 +757,19 @@ function generateCloudPath(x, y, w, h) {
 
   let d = `M ${points[0].x} ${points[0].y} `;
   for (let i = 0; i < numArcs; i++) {
-    const pA = points[i];
     const pB = points[i + 1];
     const midTh = ((i + 0.5) / numArcs) * Math.PI * 2;
-    // Puff outward
     const cpX = cx + Math.cos(midTh) * (rx * 1.25);
     const cpY = cy + Math.sin(midTh) * (ry * 1.25);
     d += `Q ${cpX} ${cpY} ${pB.x} ${pB.y} `;
   }
-  return d + "Z";
+
+  // Add the callout pointy beak towards (tipX, tipY)
+  const tailBase1 = { x: x + w * 0.15, y: y + h };
+  const tailBase2 = { x: x + w * 0.35, y: y + h };
+  d += `M ${tailBase1.x} ${tailBase1.y} L ${tipX} ${tipY} L ${tailBase2.x} ${tailBase2.y} `;
+
+  return d;
 }
 
 function getCachedDrawable(a) {
@@ -721,7 +801,7 @@ function getCachedDrawable(a) {
     }
   } else if (a.type === 'cloud') {
     if (a.w > 15 && a.h > 15) {
-      const pathD = generateCloudPath(a.x, a.y, a.w, a.h);
+      const pathD = generateCalloutCloudPath(a);
       d = gen.path(pathD, {
         stroke: a.color,
         strokeWidth: a.width,
@@ -760,25 +840,42 @@ function renderText(a) {
   ctx.restore();
 }
 
-// ① Numbered Step Counter Badge
+// ① Step Badge with Aimable Pointer Teardrop Tip!
 function renderStepBadge(a) {
   ctx.save();
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
   ctx.shadowBlur = 8;
   ctx.shadowOffsetY = 2;
 
-  // Solid badge circle
+  const tipX = a.tipX !== undefined ? a.tipX : a.x;
+  const tipY = a.tipY !== undefined ? a.tipY : (a.y + 32);
+
+  // Angle from center to tip
+  const angle = Math.atan2(tipY - a.y, tipX - a.x);
+  const r = a.radius || 17;
+
+  // Tangent wings on circle
+  const wingAngle = 0.65;
+  const w1x = a.x + Math.cos(angle - wingAngle) * r;
+  const w1y = a.y + Math.sin(angle - wingAngle) * r;
+  const w2x = a.x + Math.cos(angle + wingAngle) * r;
+  const w2y = a.y + Math.sin(angle + wingAngle) * r;
+
+  // Draw integrated teardrop shape
   ctx.beginPath();
-  ctx.arc(a.x, a.y, a.radius, 0, Math.PI * 2);
+  ctx.arc(a.x, a.y, r, angle + wingAngle, angle - wingAngle, false);
+  ctx.lineTo(tipX, tipY);
+  ctx.closePath();
+
   ctx.fillStyle = a.color;
   ctx.fill();
 
-  // Border ring
+  // Crisp white outline
   ctx.lineWidth = 2.5;
   ctx.strokeStyle = '#ffffff';
   ctx.stroke();
 
-  // Number text
+  // Number text in center
   ctx.shadowColor = 'transparent';
   ctx.font = 'bold 16px -apple-system, sans-serif';
   ctx.fillStyle = '#ffffff';
@@ -800,52 +897,54 @@ function renderHighlighter(a) {
   ctx.restore();
 }
 
-// 🔍 Magnifier Loupe Tool
+// 🔍 Magnifier Loupe Tool with Solid Callout Line & Target Ring
 function renderMagnifier(a) {
   if (!baseImage) return;
   ctx.save();
 
   const { x, y, sourceX, sourceY, radius, zoom, color } = a;
 
-  // Callout pointer line from source to lens
+  // 1. Sleek SOLID callout line (No dashed slots!)
   ctx.beginPath();
   ctx.moveTo(sourceX, sourceY);
   ctx.lineTo(x, y);
   ctx.lineWidth = 2;
-  ctx.strokeStyle = color;
-  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+  ctx.shadowBlur = 6;
   ctx.stroke();
-  ctx.setLineDash([]);
 
-  // Small source indicator dot
+  // 2. Clean circular target pin at source
   ctx.beginPath();
-  ctx.arc(sourceX, sourceY, 5, 0, Math.PI * 2);
+  ctx.arc(sourceX, sourceY, 6, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
 
-  // Circular clip for magnifier lens
+  // 3. Circular clip for magnifier lens
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.save();
   ctx.clip();
 
-  // Draw magnified image portion
   const sw = (radius * 2) / zoom;
   const sh = (radius * 2) / zoom;
   const sx = sourceX - sw / 2;
   const sy = sourceY - sh / 2;
 
-  ctx.imageSmoothingEnabled = false; // Nearest-neighbor pixelated zoom like Shottr!
+  ctx.imageSmoothingEnabled = false;
   ctx.drawImage(baseImage, sx, sy, sw, sh, x - radius, y - radius, radius * 2, radius * 2);
   ctx.restore();
 
-  // Outer lens ring & shadow
+  // 4. Outer lens ring & shadow
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.lineWidth = 3.5;
   ctx.strokeStyle = '#ffffff';
   ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-  ctx.shadowBlur = 12;
+  ctx.shadowBlur = 14;
   ctx.stroke();
 
   ctx.restore();
@@ -882,7 +981,6 @@ function applyCrop(x, y, w, h) {
     canvas.height = h;
     badgeDims.textContent = `${w} × ${h}`;
 
-    // Adjust existing annotations relative to crop origin
     annotations.forEach(a => {
       if (a.p0) {
         a.p0.x -= x; a.p0.y -= y;
@@ -891,7 +989,10 @@ function applyCrop(x, y, w, h) {
       }
       if (a.x !== undefined) { a.x -= x; a.y -= y; }
       if (a.cx !== undefined) { a.cx -= x; a.cy -= y; }
+      if (a.tipX !== undefined) { a.tipX -= x; a.tipY -= y; }
+      if (a.sourceX !== undefined) { a.sourceX -= x; a.sourceY -= y; }
       a.drawable = null;
+      if (a.type === 'pixelate') a.baked = null;
     });
 
     redraw();
@@ -899,17 +1000,25 @@ function applyCrop(x, y, w, h) {
   baseImage.src = offscreen.toDataURL('image/png');
 }
 
-function renderPixelate(a) {
-  if (a.w < 4 || a.h < 4) return;
-  const bs = a.blockSize || 12;
+// ⬛ 100% Persistent Pixelate & Blur
+function bakePixelate(a) {
+  if (!baseImage) return null;
+  const sx = Math.max(0, Math.floor(a.x));
+  const sy = Math.max(0, Math.floor(a.y));
+  const sw = Math.min(canvas.width - sx, Math.floor(a.w));
+  const sh = Math.min(canvas.height - sy, Math.floor(a.h));
+  if (sw < 4 || sh < 4) return null;
 
-  const sx = Math.floor(a.x);
-  const sy = Math.floor(a.y);
-  const sw = Math.floor(a.w);
-  const sh = Math.floor(a.h);
+  const bs = a.blockSize || 12;
+  const off = document.createElement('canvas');
+  off.width = sw;
+  off.height = sh;
+  const octx = off.getContext('2d');
+
+  octx.drawImage(baseImage, sx, sy, sw, sh, 0, 0, sw, sh);
 
   try {
-    const imgData = ctx.getImageData(sx, sy, sw, sh);
+    const imgData = octx.getImageData(0, 0, sw, sh);
     const data = imgData.data;
 
     for (let py = 0; py < sh; py += bs) {
@@ -928,21 +1037,41 @@ function renderPixelate(a) {
         g = Math.floor(g / count);
         b = Math.floor(b / count);
 
-        ctx.fillStyle = `rgb(${r},${g},${b})`;
-        ctx.fillRect(sx + px, sy + py, Math.min(bs, sw - px), Math.min(bs, sh - py));
+        octx.fillStyle = `rgb(${r},${g},${b})`;
+        octx.fillRect(px, py, Math.min(bs, sw - px), Math.min(bs, sh - py));
       }
     }
-  } catch (e) {
-    console.error("Pixelate error:", e);
+  } catch (err) {
+    console.error("Bake pixelate error:", err);
+  }
+
+  return { off, sx, sy, sw, sh };
+}
+
+function renderPixelate(a) {
+  if (!a.baked) {
+    a.baked = bakePixelate(a);
+  }
+  if (a.baked) {
+    ctx.drawImage(a.baked.off, a.baked.sx, a.baked.sy);
   }
 }
 
-// Interactive Handles for Bendable Arrow
+function renderPixelateSelection(a) {
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#ff6b6b';
+  ctx.setLineDash([4, 4]);
+  ctx.strokeRect(a.x, a.y, a.w, a.h);
+  ctx.restore();
+}
+
+// Interactive Handles
 function renderArrowHandles(a) {
   const handles = [
-    { p: a.p0, color: '#0a84ff', label: 'start' },
-    { p: a.p1, color: '#f5a623', label: 'bend' },
-    { p: a.p2, color: '#ff453a', label: 'tip' }
+    { p: a.p0, color: '#4dabf7', label: 'start' },
+    { p: a.p1, color: '#ffa94d', label: 'bend' },
+    { p: a.p2, color: '#ff6b6b', label: 'tip' }
   ];
 
   ctx.save();
@@ -967,6 +1096,19 @@ function renderArrowHandles(a) {
   ctx.restore();
 }
 
+function renderPointerTipHandle(a) {
+  if (a.tipX === undefined) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(a.tipX, a.tipY, 8, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffa94d'; // Aim handle
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+  ctx.restore();
+}
+
 function hitTestArrowHandles(a, pos) {
   const radius = 16;
   if (Math.hypot(pos.x - a.p1.x, pos.y - a.p1.y) < radius) return 'p1';
@@ -982,14 +1124,25 @@ function findAnnotationAt(pos) {
       if (hitTestArrowHandles(a, pos)) return a;
       if (Math.hypot(pos.x - a.p1.x, pos.y - a.p1.y) < 30) return a;
     } else if (a.type === 'step') {
-      if (Math.hypot(pos.x - a.x, pos.y - a.y) < a.radius + 5) return a;
+      if (Math.hypot(pos.x - a.x, pos.y - a.y) < a.radius + 6) return a;
+      if (Math.hypot(pos.x - a.tipX, pos.y - a.tipY) < 18) return a;
     } else if (a.type === 'text') {
-      if (Math.hypot(pos.x - a.x, pos.y - a.y) < 35) return a;
+      // Precision full bounding box hit test!
+      const lines = a.text.split('\n');
+      const fontSize = a.fontSize || 32;
+      let maxLen = 0;
+      lines.forEach(l => { if (l.length > maxLen) maxLen = l.length; });
+      const w = Math.max(50, maxLen * fontSize * 0.6);
+      const h = Math.max(30, lines.length * fontSize * 1.25);
+      if (pos.x >= a.x - 8 && pos.x <= a.x + w + 8 &&
+          pos.y >= a.y - 8 && pos.y <= a.y + h + 8) {
+        return a;
+      }
     } else if (a.type === 'oval') {
       const dx = (pos.x - a.cx) / a.rx;
       const dy = (pos.y - a.cy) / a.ry;
       if (Math.abs(dx * dx + dy * dy - 1) < 0.4) return a;
-    } else if (a.type === 'rect' || a.type === 'cloud' || a.type === 'highlighter') {
+    } else if (a.type === 'rect' || a.type === 'cloud' || a.type === 'highlighter' || a.type === 'pixelate') {
       if (pos.x >= a.x - 5 && pos.x <= a.x + a.w + 5 &&
           pos.y >= a.y - 5 && pos.y <= a.y + a.h + 5) return a;
     } else if (a.type === 'magnifier') {
