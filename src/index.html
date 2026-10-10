@@ -19,6 +19,21 @@
         Doodlshot
       </div>
 
+      <!-- Gallery Navigator (Shown when folder has multiple images) -->
+      <div class="tool-group" id="gallery-nav-group" style="display: none;">
+        <button class="tool-btn gallery-btn" id="btn-gallery-prev" title="Previous Image (Left Arrow or [ )">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <span id="gallery-counter" class="gallery-counter-text" title="Current image index">1 / 1</span>
+        <button class="tool-btn gallery-btn" id="btn-gallery-next" title="Next Image (Right Arrow or ] )">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </div>
+
       <!-- Drawing Tools -->
       <div class="tool-group">
         <button class="tool-btn" id="tool-select" title="Select & Move (V)">

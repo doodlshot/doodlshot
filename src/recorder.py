@@ -179,6 +179,103 @@ def convert_to_gif(video_path):
     return None
 
 
+class RecordingPillWindow(Gtk.ApplicationWindow):
+    """Tiny, unobtrusive floating status indicator with live timer and stop button."""
+    def __init__(self, app, recorder_proc, out_file):
+        super().__init__(application=app, title="Doodlshot Recording Pill")
+        self.set_decorated(False)
+        self.set_default_size(124, 30)
+        self.recorder_proc = recorder_proc
+        self.out_file = out_file
+        self.start_time = time.time()
+        self.should_open_preview = False
+
+        self.setup_ui()
+        self.timer_source = GLib.timeout_add_seconds(1, self.on_timer_tick)
+
+    def setup_ui(self):
+        css = """
+        window {
+            background-color: transparent;
+        }
+        .pill-container {
+            background-color: rgba(18, 18, 22, 0.96);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 9999px;
+            padding: 3px 8px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+        }
+        .rec-dot {
+            background-color: #ef4444;
+            border-radius: 9999px;
+            min-width: 8px;
+            min-height: 8px;
+        }
+        .timer-text {
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Mono", Menlo, monospace;
+            font-size: 11px;
+            font-weight: 700;
+            margin-left: 3px;
+            margin-right: 5px;
+        }
+        .pill-stop-btn {
+            background-color: rgba(239, 68, 68, 0.25);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.5);
+            border-radius: 9999px;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 7px;
+            cursor: pointer;
+        }
+        .pill-stop-btn:hover {
+            background-color: #ef4444;
+            color: #ffffff;
+        }
+        """
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css.encode("utf-8"))
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+        box.add_css_class("pill-container")
+
+        dot = Gtk.Box()
+        dot.add_css_class("rec-dot")
+        box.append(dot)
+
+        self.label = Gtk.Label(label="00:00")
+        self.label.add_css_class("timer-text")
+        box.append(self.label)
+
+        stop_btn = Gtk.Button(label="⏹ Stop")
+        stop_btn.add_css_class("pill-stop-btn")
+        stop_btn.connect("clicked", self.on_stop_clicked)
+        box.append(stop_btn)
+
+        self.set_child(box)
+
+    def on_timer_tick(self):
+        if not is_recording():
+            self.should_open_preview = True
+            self.get_application().quit()
+            return False
+        secs = int(time.time() - self.start_time)
+        m = secs // 60
+        s = secs % 60
+        self.label.set_text(f"{m:02d}:{s:02d}")
+        return True
+
+    def on_stop_clicked(self, btn):
+        if self.timer_source:
+            GLib.source_remove(self.timer_source)
+            self.timer_source = None
+        self.should_open_preview = True
+        stop_recording()
+        self.get_application().quit()
+
+
 class VideoShareWindow(Gtk.ApplicationWindow):
     def __init__(self, app, video_path):
         super().__init__(application=app, title="Doodlshot Recording Dialog")
@@ -261,7 +358,7 @@ def launch_video_share_modal(video_path):
 
 
 def start_recording(geometry=None):
-    """Starts wf-recorder with clean non-invasive desktop notification controls."""
+    """Starts wf-recorder with a tiny unobtrusive floating status indicator."""
     if is_recording():
         return False
 
@@ -300,38 +397,19 @@ def start_recording(geometry=None):
     }
     PID_FILE.write_text(json.dumps(pid_data), encoding="utf-8")
 
-    # Spawn desktop notification with Stop action button
-    notif_cmd = [
-        "notify-send",
-        "-a", "Doodlshot",
-        "-u", "critical",
-        "-t", "0",
-        "-A", "stop=⏹ Stop Recording",
-        "🔴 Recording Screen...",
-        "Recording in progress.\nClick below or press keybinding to stop."
-    ]
-    notif_proc = subprocess.Popen(notif_cmd, stdout=subprocess.PIPE, text=True)
+    # Launch tiny pill app (floats at top right via Hyprland rule, no giant toaster alert)
+    app = Gtk.Application(application_id="dev.doodlshot.pill", flags=Gio.ApplicationFlags.FLAGS_NONE)
+    pill_win = None
 
-    def watch_notif():
-        try:
-            line = notif_proc.stdout.readline()
-            if "stop" in line:
-                stop_recording()
-        except Exception:
-            pass
+    def on_activate(a):
+        nonlocal pill_win
+        pill_win = RecordingPillWindow(a, proc, str(out_file))
+        pill_win.present()
 
-    threading.Thread(target=watch_notif, daemon=True).start()
+    app.connect("activate", on_activate)
+    app.run(None)
 
-    # Wait for wf-recorder to finish (either via notification click, external doodlshot -r, or SIGINT)
-    proc.wait()
-
-    # Dismiss notification
-    try:
-        notif_proc.terminate()
-        notif_proc.wait(timeout=0.5)
-    except Exception:
-        pass
-
+    # After pill window exits
     if PID_FILE.exists():
         try:
             PID_FILE.unlink()

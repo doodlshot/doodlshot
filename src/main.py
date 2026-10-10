@@ -61,9 +61,28 @@ class DoodlshotApp:
     def __init__(self, image_path=None, image_data=None):
         self.image_path = image_path
         self.image_data = image_data
+        self.gallery_files = []
+        self.gallery_index = -1
+        self._init_gallery()
         self.app = Gtk.Application(application_id="dev.doodlshot.app", flags=Gio.ApplicationFlags.FLAGS_NONE)
         self.app.connect("activate", self.on_activate)
         self.win = None
+
+    def _init_gallery(self):
+        if self.image_path and os.path.isfile(self.image_path):
+            try:
+                p = Path(self.image_path).resolve()
+                parent = p.parent
+                valid_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+                files = sorted(
+                    [f for f in parent.iterdir() if f.is_file() and f.suffix.lower() in valid_exts],
+                    key=lambda x: (x.stat().st_mtime, x.name.lower())
+                )
+                if len(files) > 1 and p in files:
+                    self.gallery_files = files
+                    self.gallery_index = files.index(p)
+            except Exception as e:
+                print(f"Gallery init error: {e}", file=sys.stderr)
 
     def run(self):
         return self.app.run(None)
@@ -100,9 +119,19 @@ class DoodlshotApp:
                 b64 = base64.b64encode(f.read()).decode("utf-8")
                 data_uri = f"data:image/png;base64,{b64}"
 
+        gallery_meta = {
+            "hasGallery": len(self.gallery_files) > 1,
+            "index": (self.gallery_index + 1) if self.gallery_index >= 0 else 1,
+            "total": len(self.gallery_files),
+            "filename": Path(self.image_path).name if self.image_path else ""
+        }
+
+        injections = []
         if data_uri:
-            injection = f"<script>window.INITIAL_IMAGE_DATA = '{data_uri}';</script></head>"
-            html_content = html_content.replace("</head>", injection, 1)
+            injections.append(f"window.INITIAL_IMAGE_DATA = '{data_uri}';")
+        injections.append(f"window.GALLERY_INFO = {json.dumps(gallery_meta)};")
+        injection_html = f"<script>{' '.join(injections)}</script></head>"
+        html_content = html_content.replace("</head>", injection_html, 1)
 
         base_uri = f"file://{html_file}"
         web.load_html(html_content, base_uri)
@@ -306,6 +335,41 @@ class DoodlshotApp:
                 main_script = str(Path(__file__).resolve())
                 subprocess.Popen([sys.executable, main_script, "-r"])
                 self.app.quit()
+
+            elif action == "gallery_nav" and self.gallery_files:
+                direction = data.get("direction") if isinstance(data, dict) else str(data)
+                if direction == "prev":
+                    new_idx = max(0, self.gallery_index - 1)
+                elif direction == "next":
+                    new_idx = min(len(self.gallery_files) - 1, self.gallery_index + 1)
+                elif direction == "goto":
+                    new_idx = int(data.get("index", self.gallery_index)) - 1
+                else:
+                    new_idx = self.gallery_index
+
+                if 0 <= new_idx < len(self.gallery_files) and new_idx != self.gallery_index:
+                    self.gallery_index = new_idx
+                    target_file = self.gallery_files[self.gallery_index]
+                    self.image_path = str(target_file)
+                    try:
+                        ext = target_file.suffix.lower()
+                        mime = "image/jpeg" if ext in (".jpg", ".jpeg") else ("image/webp" if ext == ".webp" else "image/png")
+                        with open(target_file, "rb") as f:
+                            b64 = base64.b64encode(f.read()).decode("utf-8")
+                            data_uri = f"data:{mime};base64,{b64}"
+                        payload = {
+                            "status": "ok",
+                            "dataUri": data_uri,
+                            "index": self.gallery_index + 1,
+                            "total": len(self.gallery_files),
+                            "filename": target_file.name
+                        }
+                    except Exception as err:
+                        payload = {"status": "error", "message": str(err)}
+
+                    if hasattr(self, "web_view") and self.web_view:
+                        js = f"window.onGalleryImageLoaded && window.onGalleryImageLoaded({json.dumps(payload)});"
+                        self.web_view.evaluate_javascript(js, -1, None, None, None, None, None)
 
             elif action == "save" and data:
                 if "," in data:

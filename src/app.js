@@ -227,6 +227,9 @@ function initUI() {
     });
   }
 
+  // Gallery Navigation UI
+  initGalleryUI();
+
   const stitchCloseBtn = document.getElementById('stitch-close-btn');
   if (stitchCloseBtn) {
     stitchCloseBtn.addEventListener('click', (e) => {
@@ -2955,6 +2958,45 @@ function handleKeyDown(e) {
     return;
   }
 
+  // Gallery navigation shortcuts (Left/Right, [, ], Alt+Arrows)
+  if (window.GALLERY_INFO && window.GALLERY_INFO.hasGallery) {
+    if (e.key === '[' || (e.altKey && e.key === 'ArrowLeft')) {
+      e.preventDefault();
+      navigateGallery('prev');
+      return;
+    }
+    if (e.key === ']' || (e.altKey && e.key === 'ArrowRight')) {
+      e.preventDefault();
+      navigateGallery('next');
+      return;
+    }
+    if (!selectedAnnotation && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        navigateGallery('prev');
+        return;
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        navigateGallery('next');
+        return;
+      }
+    }
+  }
+
+  // Nudge selected annotation with Arrow keys
+  if (selectedAnnotation && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+    e.preventDefault();
+    const step = e.shiftKey ? 10 : 1;
+    let dx = 0, dy = 0;
+    if (e.key === 'ArrowLeft') dx = -step;
+    else if (e.key === 'ArrowRight') dx = step;
+    else if (e.key === 'ArrowUp') dy = -step;
+    else if (e.key === 'ArrowDown') dy = step;
+    nudgeSelectedAnnotation(dx, dy);
+    return;
+  }
+
   if (e.ctrlKey && e.key.toLowerCase() === 'z') {
     e.preventDefault();
     undo();
@@ -3069,3 +3111,111 @@ function cycleBackdrop() {
   resizeCanvasForBackdrop();
   redraw();
 }
+
+function nudgeSelectedAnnotation(dx, dy) {
+  if (!selectedAnnotation) return;
+  saveHistoryState();
+  if (selectedAnnotation.type === 'arrow' || selectedAnnotation.type === 'ruler') {
+    selectedAnnotation.startX += dx;
+    selectedAnnotation.startY += dy;
+    selectedAnnotation.endX += dx;
+    selectedAnnotation.endY += dy;
+    if (selectedAnnotation.controlX != null) selectedAnnotation.controlX += dx;
+    if (selectedAnnotation.controlY != null) selectedAnnotation.controlY += dy;
+  } else if (selectedAnnotation.x != null && selectedAnnotation.y != null) {
+    selectedAnnotation.x += dx;
+    selectedAnnotation.y += dy;
+  }
+  selectedAnnotation.drawable = null;
+  redraw();
+}
+
+// ----------------------------------------------------
+// Gallery Navigation
+// ----------------------------------------------------
+
+function initGalleryUI() {
+  const group = document.getElementById('gallery-nav-group');
+  const btnPrev = document.getElementById('btn-gallery-prev');
+  const btnNext = document.getElementById('btn-gallery-next');
+
+  if (!window.GALLERY_INFO || !window.GALLERY_INFO.hasGallery) {
+    if (group) group.style.display = 'none';
+    return;
+  }
+
+  if (group) group.style.display = 'flex';
+  updateGalleryCounter(window.GALLERY_INFO.index, window.GALLERY_INFO.total, window.GALLERY_INFO.filename);
+
+  if (btnPrev) {
+    btnPrev.onclick = (e) => {
+      e.stopPropagation();
+      navigateGallery('prev');
+    };
+  }
+  if (btnNext) {
+    btnNext.onclick = (e) => {
+      e.stopPropagation();
+      navigateGallery('next');
+    };
+  }
+}
+
+function updateGalleryCounter(idx, total, filename) {
+  const counter = document.getElementById('gallery-counter');
+  const btnPrev = document.getElementById('btn-gallery-prev');
+  const btnNext = document.getElementById('btn-gallery-next');
+
+  if (counter) {
+    counter.textContent = `${idx} / ${total}`;
+    counter.title = filename ? `${filename} (${idx} of ${total})` : `${idx} of ${total}`;
+  }
+  if (btnPrev) {
+    btnPrev.disabled = (idx <= 1);
+  }
+  if (btnNext) {
+    btnNext.disabled = (idx >= total);
+  }
+}
+
+function navigateGallery(direction) {
+  if (!window.GALLERY_INFO || !window.GALLERY_INFO.hasGallery) return;
+
+  if (annotations.length > 0) {
+    const proceed = confirm("You have unsaved annotations on this image. Discard them and switch image?");
+    if (!proceed) return;
+  }
+
+  sendToBackend('gallery_nav', { direction });
+}
+
+window.onGalleryImageLoaded = function(payload) {
+  if (!payload || payload.status !== 'ok') return;
+
+  annotations = [];
+  undoStack = [];
+  redoStack = [];
+  selectedAnnotation = null;
+  activeHandle = null;
+  cropState = null;
+  cachedBaseBlur = null;
+  cachedBlurComposite = null;
+
+  if (window.GALLERY_INFO) {
+    window.GALLERY_INFO.index = payload.index;
+    window.GALLERY_INFO.total = payload.total;
+    window.GALLERY_INFO.filename = payload.filename;
+  }
+  updateGalleryCounter(payload.index, payload.total, payload.filename);
+
+  baseImage = new Image();
+  baseImage.onload = () => {
+    imageWidth = baseImage.naturalWidth || baseImage.width;
+    imageHeight = baseImage.naturalHeight || baseImage.height;
+    resizeCanvasForBackdrop();
+    redraw();
+    showToast(`${payload.filename} (${payload.index}/${payload.total})`);
+  };
+  baseImage.src = payload.dataUri;
+};
+
