@@ -2,15 +2,15 @@
 """
 Wayland screen recorder module for Doodlshot using wf-recorder and ffmpeg.
 Optimized for lightweight, shareable H.264 MP4 videos (<5MB) and animated GIFs.
+Features:
+- Unobtrusive floating recording pill with live timer & Stop button
+- 100% crash-proof native GTK4 preview modal (no WebKit freezes)
+- Instant clipboard copy, GIF converter, and folder reveal
 """
 
 import sys
 import os
 from pathlib import Path
-
-# Disable WebKit bubblewrap sandbox so the media process can access local recordings directly
-os.environ["WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS"] = "1"
-
 import time
 import json
 import signal
@@ -20,8 +20,7 @@ import subprocess
 
 import gi
 gi.require_version('Gtk', '4.0')
-gi.require_version('WebKit', '6.0')
-from gi.repository import Gtk, Gdk, GLib, Gio, WebKit
+from gi.repository import Gtk, Gdk, GLib, Gio
 
 PID_FILE = Path("/tmp/doodlshot_recording.json")
 DEFAULT_RECORDINGS_DIR = Path.home() / "Videos" / "Recordings"
@@ -180,11 +179,11 @@ def convert_to_gif(video_path):
 
 
 class RecordingPillWindow(Gtk.ApplicationWindow):
-    """Tiny, unobtrusive floating status indicator with live timer and stop button."""
+    """Floating status indicator with live timer and stop button."""
     def __init__(self, app, recorder_proc, out_file):
         super().__init__(application=app, title="Doodlshot Recording Pill")
         self.set_decorated(False)
-        self.set_default_size(124, 30)
+        self.set_default_size(160, 36)
         self.recorder_proc = recorder_proc
         self.out_file = out_file
         self.start_time = time.time()
@@ -199,34 +198,34 @@ class RecordingPillWindow(Gtk.ApplicationWindow):
             background-color: transparent;
         }
         .pill-container {
-            background-color: rgba(18, 18, 22, 0.96);
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            background-color: rgba(18, 18, 22, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.22);
             border-radius: 9999px;
-            padding: 3px 8px;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+            padding: 4px 10px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
         }
         .rec-dot {
             background-color: #ef4444;
             border-radius: 9999px;
-            min-width: 8px;
-            min-height: 8px;
+            min-width: 9px;
+            min-height: 9px;
         }
         .timer-text {
             color: #ffffff;
             font-family: -apple-system, BlinkMacSystemFont, "SF Mono", Menlo, monospace;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 700;
-            margin-left: 3px;
-            margin-right: 5px;
+            margin-left: 4px;
+            margin-right: 6px;
         }
         .pill-stop-btn {
             background-color: rgba(239, 68, 68, 0.25);
-            color: #ef4444;
-            border: 1px solid rgba(239, 68, 68, 0.5);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.6);
             border-radius: 9999px;
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 700;
-            padding: 2px 7px;
+            padding: 2px 8px;
             cursor: pointer;
         }
         .pill-stop-btn:hover {
@@ -238,7 +237,7 @@ class RecordingPillWindow(Gtk.ApplicationWindow):
         provider.load_from_data(css.encode("utf-8"))
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         box.add_css_class("pill-container")
 
         dot = Gtk.Box()
@@ -277,72 +276,194 @@ class RecordingPillWindow(Gtk.ApplicationWindow):
 
 
 class VideoShareWindow(Gtk.ApplicationWindow):
+    """Native, crash-proof GTK4 video preview and action modal."""
     def __init__(self, app, video_path):
         super().__init__(application=app, title="Doodlshot Recording Dialog")
         self.set_default_size(860, 580)
-        self.video_path = video_path
+        self.video_path = str(video_path)
+        self.stats = probe_video_stats(self.video_path)
 
-        # Dynamically reinforce Hyprland floating and centering rules
-        try:
-            subprocess.run(["hyprctl", "keyword", "windowrulev2", "float,title:^(Doodlshot Recording Dialog)$"], capture_output=True)
-            subprocess.run(["hyprctl", "keyword", "windowrulev2", "center,title:^(Doodlshot Recording Dialog)$"], capture_output=True)
-        except Exception:
-            pass
+        # Keyboard shortcuts
+        key_controller = Gtk.EventControllerKey.new()
+        key_controller.connect("key-pressed", self.on_key_pressed)
+        self.add_controller(key_controller)
 
-        self.web = WebKit.WebView()
-        settings = self.web.get_settings()
-        settings.set_enable_javascript(True)
-        settings.set_media_playback_requires_user_gesture(False)
-        settings.set_media_playback_allows_inline(True)
-        settings.set_allow_file_access_from_file_urls(True)
-        settings.set_allow_universal_access_from_file_urls(True)
+        self.setup_ui()
 
-        ucm = self.web.get_user_content_manager()
-        ucm.register_script_message_handler("doodlshot_video")
-        ucm.connect("script-message-received::doodlshot_video", self.on_js_message)
+    def setup_ui(self):
+        css = """
+        .dialog-title {
+            font-weight: 700;
+            font-size: 14px;
+            color: #f4f4f5;
+        }
+        .stats-badge {
+            background-color: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 9999px;
+            padding: 3px 10px;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Mono", Menlo, monospace;
+            font-size: 11px;
+            font-weight: 600;
+            color: #a1a1aa;
+        }
+        .video-viewport-box {
+            background-color: #09090b;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+        }
+        .toast-banner {
+            background-color: rgba(24, 24, 27, 0.95);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            color: #38bdf8;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 5px 14px;
+            border-radius: 9999px;
+        }
+        """
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css.encode("utf-8"))
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
-        src_dir = Path(__file__).parent.resolve()
-        html_file = src_dir / "video_player.html"
-        base_uri = f"file://{html_file}"
+        # HeaderBar with native window close button
+        header = Gtk.HeaderBar()
+        header.set_show_title_buttons(True)
 
-        with open(html_file, "r", encoding="utf-8") as f:
-            html_content = f.read()
+        title_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        title_label = Gtk.Label(label="Screen Recording")
+        title_label.add_css_class("dialog-title")
+        title_box.append(title_label)
 
-        stats = probe_video_stats(video_path)
-        injection = f"<script>window.addEventListener('DOMContentLoaded', () => window.initVideo({json.dumps(stats)}));</script></head>"
-        html_content = html_content.replace("</head>", injection, 1)
+        stats_str = f"{self.stats['duration']}s · {self.stats['size_mb']} MB · {self.stats['width']}×{self.stats['height']}"
+        stats_badge = Gtk.Label(label=stats_str)
+        stats_badge.add_css_class("stats-badge")
+        title_box.append(stats_badge)
 
-        self.web.load_html(html_content, base_uri)
-        self.set_child(self.web)
+        header.set_title_widget(title_box)
+        self.set_titlebar(header)
 
-    def on_js_message(self, ucm, js_result):
-        try:
-            raw = js_result.to_json(0)
-            msg = json.loads(raw)
-            action = msg.get("action")
-            data = msg.get("data")
+        # Content Box
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        main_box.set_margin_top(12)
+        main_box.set_margin_bottom(16)
+        main_box.set_margin_start(16)
+        main_box.set_margin_end(16)
 
-            if action == "copy_video":
-                copy_video_to_clipboard(self.video_path)
-            elif action == "open_folder":
-                parent = str(Path(self.video_path).parent)
-                subprocess.run(["xdg-open", parent])
-            elif action == "make_gif":
-                def do_gif():
-                    gif = convert_to_gif(self.video_path)
-                    if gif:
-                        GLib.idle_add(lambda: self.web.evaluate_javascript(
-                            "showToast('GIF copied to clipboard!');", -1, None, None, None, None, None
-                        ))
-                threading.Thread(target=do_gif, daemon=True).start()
-            elif action == "delete_video":
-                if os.path.exists(self.video_path):
-                    os.remove(self.video_path)
-                self.get_application().quit()
-            elif action == "close":
-                self.get_application().quit()
-        except Exception as ex:
-            print(f"Video share message error: {ex}", file=sys.stderr)
+        # Video Player
+        video_wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        video_wrap.add_css_class("video-viewport-box")
+        video_wrap.set_vexpand(True)
+        video_wrap.set_hexpand(True)
+
+        gfile = Gio.File.new_for_path(self.video_path)
+        self.video_player = Gtk.Video.new_for_file(gfile)
+        self.video_player.set_autoplay(True)
+        self.video_player.set_loop(True)
+        self.video_player.set_vexpand(True)
+        self.video_player.set_hexpand(True)
+        video_wrap.append(self.video_player)
+
+        main_box.append(video_wrap)
+
+        # Toast status banner
+        self.toast_label = Gtk.Label(label="")
+        self.toast_label.add_css_class("toast-banner")
+        self.toast_label.set_visible(False)
+        self.toast_label.set_halign(Gtk.Align.CENTER)
+        main_box.append(self.toast_label)
+
+        # Actions Bar
+        actions_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+
+        # Left Buttons
+        left_actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+
+        btn_copy = Gtk.Button(label="📋 Copy Video")
+        btn_copy.add_css_class("suggested-action")
+        btn_copy.connect("clicked", self.on_copy_clicked)
+        left_actions.append(btn_copy)
+
+        btn_folder = Gtk.Button(label="📁 Open in Folder")
+        btn_folder.connect("clicked", self.on_folder_clicked)
+        left_actions.append(btn_folder)
+
+        btn_gif = Gtk.Button(label="✨ Convert to GIF")
+        btn_gif.connect("clicked", self.on_gif_clicked)
+        left_actions.append(btn_gif)
+
+        actions_bar.append(left_actions)
+
+        # Spacer
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        actions_bar.append(spacer)
+
+        # Right Buttons
+        right_actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+
+        btn_delete = Gtk.Button(label="🗑️ Delete")
+        btn_delete.add_css_class("destructive-action")
+        btn_delete.connect("clicked", self.on_delete_clicked)
+        right_actions.append(btn_delete)
+
+        btn_done = Gtk.Button(label="Done")
+        btn_done.connect("clicked", lambda b: self.get_application().quit())
+        right_actions.append(btn_done)
+
+        actions_bar.append(right_actions)
+        main_box.append(actions_bar)
+
+        self.set_child(main_box)
+
+    def show_toast(self, text, timeout_ms=2500):
+        self.toast_label.set_text(text)
+        self.toast_label.set_visible(True)
+        GLib.timeout_add(timeout_ms, self._hide_toast)
+
+    def _hide_toast(self):
+        self.toast_label.set_visible(False)
+        return False
+
+    def on_copy_clicked(self, btn):
+        if copy_video_to_clipboard(self.video_path):
+            self.show_toast("Copied video to clipboard!")
+
+    def on_folder_clicked(self, btn):
+        parent = str(Path(self.video_path).parent)
+        subprocess.run(["xdg-open", parent])
+
+    def on_gif_clicked(self, btn):
+        self.show_toast("Generating high-quality GIF... please wait", 5000)
+        def do_gif():
+            gif = convert_to_gif(self.video_path)
+            if gif:
+                GLib.idle_add(lambda: self.show_toast("✨ GIF copied to clipboard!"))
+        threading.Thread(target=do_gif, daemon=True).start()
+
+    def on_delete_clicked(self, btn):
+        if os.path.exists(self.video_path):
+            try:
+                os.remove(self.video_path)
+            except Exception as ex:
+                print(f"Delete error: {ex}", file=sys.stderr)
+        self.get_application().quit()
+
+    def on_key_pressed(self, controller, keyval, keycode, state):
+        if keyval in (Gdk.KEY_Escape, Gdk.KEY_q, Gdk.KEY_Q):
+            self.get_application().quit()
+            return True
+        elif keyval in (Gdk.KEY_c, Gdk.KEY_C) and (state & Gdk.ModifierType.CONTROL_MASK):
+            self.on_copy_clicked(None)
+            return True
+        elif keyval == Gdk.KEY_space:
+            stream = self.video_player.get_media_stream()
+            if stream:
+                stream.set_playing(not stream.get_playing())
+            return True
+        return False
 
 
 def launch_video_share_modal(video_path):
@@ -358,7 +479,7 @@ def launch_video_share_modal(video_path):
 
 
 def start_recording(geometry=None):
-    """Starts wf-recorder with a tiny unobtrusive floating status indicator."""
+    """Starts wf-recorder with an unobtrusive floating status indicator."""
     if is_recording():
         return False
 
@@ -397,7 +518,20 @@ def start_recording(geometry=None):
     }
     PID_FILE.write_text(json.dumps(pid_data), encoding="utf-8")
 
-    # Launch tiny pill app (floats at top right via Hyprland rule, no giant toaster alert)
+    # Audio cue & instant toast notification
+    try:
+        subprocess.Popen(["canberra-gtk-play", "-i", "message"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+    subprocess.run([
+        "notify-send",
+        "-a", "Doodlshot",
+        "-t", "3000",
+        "🔴 Recording Started",
+        "Press Shift+Print or click Stop when finished."
+    ], check=False)
+
+    # Launch floating pill app (pinned at top center below bar via Hyprland rule)
     app = Gtk.Application(application_id="dev.doodlshot.pill", flags=Gio.ApplicationFlags.FLAGS_NONE)
     pill_win = None
 
